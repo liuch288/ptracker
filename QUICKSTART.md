@@ -40,9 +40,20 @@ ptracker --help
 ## 初始化
 
 ```bash
-# 创建数据目录和配置文件
+# 使用默认颜色方案（绿色代表盈利/上涨）
 ptracker init
+
+# 指定颜色方案为西方风格（绿涨红跌）
+ptracker init --color-scheme green_up
+
+# 指定颜色方案为中国风格（红涨绿跌）
+ptracker init --color-scheme red_up
+ptracker init -c red_up
 ```
+
+颜色方案说明：
+- `green_up`（默认）: 绿色代表盈利/上涨，红色代表亏损/下跌（西方风格）
+- `red_up`: 红色代表盈利/上涨，绿色代表亏损/下跌（中国风格）
 
 这会在 `~/.ptracker/` 创建以下文件：
 - `transactions.json` - 交易记录
@@ -295,9 +306,24 @@ cost_basis_method = "average"  # average 或 fifo
 [display]
 date_format = "%Y-%m-%d"
 decimal_places = 2
+color_scheme = "green_up"  # green_up 或 red_up
 
 [api]
 # 未来可添加 API keys
+```
+
+### 配置管理命令
+
+```bash
+# 查看当前配置
+ptracker config show
+
+# 修改配置项
+ptracker config set display.color_scheme red_up
+ptracker config set general.default_currency CNY
+
+# 交互式修改颜色方案
+ptracker config color
 ```
 
 ## 数据备份

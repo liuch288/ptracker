@@ -11,6 +11,7 @@ from ptracker.services.validation import ValidationService
 from ptracker.services.position_calculator import PositionCalculator, ClosureType
 from ptracker.utils.id_generator import generate_id
 from ptracker.config import ConfigManager
+from ptracker.utils.color_helper import get_pnl_color
 
 console = Console()
 app = typer.Typer(help="Manage trades and transactions")
@@ -188,7 +189,7 @@ def add_trade(
             console.print(f"\n[yellow]⚠️  Position fully closed[/yellow]")
             if position_update.realized:
                 pnl = position_update.realized['realized_pnl']
-                pnl_color = "green" if pnl >= 0 else "red"
+                pnl_color = get_pnl_color(pnl, data_dir / "config.toml")
                 console.print(f"  Realized P&L: [{pnl_color}]{pnl:+.2f}[/{pnl_color}] {currency}")
         elif position_update.closure_type == ClosureType.PARTIAL:
             console.print(f"\n[yellow]⚠️  Position partially closed[/yellow]")

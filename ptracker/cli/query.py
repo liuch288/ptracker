@@ -8,6 +8,7 @@ from rich.table import Table
 from ptracker.repositories import HoldingRepository, RealizedRepository
 from ptracker.services.price_service import PriceService
 from ptracker.services.pnl_calculator import PnLCalculator
+from ptracker.utils.color_helper import get_pnl_color
 
 console = Console()
 app = typer.Typer(help="Query holdings and portfolio information")
@@ -133,8 +134,8 @@ def query_holdings(
         
         for realized in sorted(realized_positions, key=lambda r: r['last_close_date'], reverse=True)[:10]:
             pnl = realized['realized_pnl']
-            pnl_color = "green" if pnl >= 0 else "red"
-            return_color = "green" if realized['return_pct'] >= 0 else "red"
+            pnl_color = get_pnl_color(pnl, data_dir / "config.toml")
+            return_color = get_pnl_color(realized['return_pct'], data_dir / "config.toml")
             
             table.add_row(
                 realized['asset'],
@@ -233,8 +234,8 @@ def query_value(
     total_pnl = total_current_value - total_invested
     total_return = (total_pnl / total_invested * 100) if total_invested > 0 else 0.0
     
-    pnl_color = "green" if total_pnl >= 0 else "red"
-    return_color = "green" if total_return >= 0 else "red"
+    pnl_color = get_pnl_color(total_pnl, data_dir / "config.toml")
+    return_color = get_pnl_color(total_return, data_dir / "config.toml")
     
     console.print(f"[bold]Portfolio Summary[/bold]")
     console.print(f"  Total Invested:     {total_invested:>15,.2f} {target_curr}")
@@ -257,8 +258,8 @@ def query_value(
             pnl = data['current'] - data['invested']
             ret = (pnl / data['invested'] * 100) if data['invested'] > 0 else 0.0
             
-            pnl_color = "green" if pnl >= 0 else "red"
-            ret_color = "green" if ret >= 0 else "red"
+            pnl_color = get_pnl_color(pnl, data_dir / "config.toml")
+            ret_color = get_pnl_color(ret, data_dir / "config.toml")
             
             table.add_row(
                 key,
