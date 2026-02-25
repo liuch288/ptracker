@@ -270,6 +270,98 @@ def query_value(
             )
         
         console.print(table)
+@app.command("realized")
+def query_realized(
+    account: Optional[str] = typer.Option(None, "--account", "-a", help="Filter by account"),
+    asset: Optional[str] = typer.Option(None, "--asset", help="Filter by asset"),
+    sort_by: Optional[str] = typer.Option("date", "--sort", "-s", help="Sort by: date, pnl, return, days (default: date)"),
+    limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Limit number of results"),
+):
+    """Query realized (closed) positions."""
+    data_dir = get_data_dir()
+
+    if not data_dir.exists():
+        console.print("[red]Error: ptracker not initialized. Run 'ptracker init' first.[/red]")
+        raise typer.Exit(1)
+
+    # Get realized positions
+    realized_repo = RealizedRepository(data_dir / "realized.json")
+    realized_positions = realized_repo.find_all()
+
+    # Apply filters
+    if account:
+        realized_positions = [r for r in realized_positions if r['account'] == account]
+
+    if asset:
+        realized_positions = [r for r in realized_positions if r['asset'].upper() == asset.upper()]
+
+    if not realized_positions:
+        console.print("[yellow]No realized positions found.[/yellow]")
+        return
+
+    # Sort
+    if sort_by == "date":
+        realized_positions.sort(key=lambda r: r['last_close_date'], reverse=True)
+    elif sort_by == "pnl":
+        realized_positions.sort(key=lambda r: r['realized_pnl'], reverse=True)
+    elif sort_by == "return":
+        realized_positions.sort(key=lambda r: r['return_pct'], reverse=True)
+    elif sort_by == "days":
+        realized_positions.sort(key=lambda r: r['holding_days'], reverse=True)
+    else:
+        console.print(f"[red]Error: Invalid sort field '{sort_by}'. Valid options: date, pnl, return, days[/red]")
+        raise typer.Exit(1)
+
+    # Apply limit
+    if limit:
+        realized_positions = realized_positions[:limit]
+
+    # Create table
+    table = Table(title="Realized Positions", show_header=True, header_style="bold cyan")
+    table.add_column("Asset", style="bold")
+    table.add_column("Account")
+    table.add_column("Dir")
+    table.add_column("Quantity", justify="right")
+    table.add_column("Invested", justify="right")
+    table.add_column("Proceeds", justify="right")
+    table.add_column("Realized P&L", justify="right")
+    table.add_column("Return %", justify="right")
+    table.add_column("Days", justify="right")
+    table.add_column("Opened", style="dim")
+    table.add_column("Closed", style="dim")
+
+    total_pnl = 0.0
+
+    for realized in realized_positions:
+        pnl = realized['realized_pnl']
+        pnl_color = get_pnl_color(pnl, data_dir / "config.toml")
+        return_color = get_pnl_color(realized['return_pct'], data_dir / "config.toml")
+
+        total_pnl += pnl
+
+        table.add_row(
+            realized['asset'],
+            realized['account'],
+            realized['direction'][:1].upper(),
+            f"{realized['total_quantity']:.2f}",
+            f"{realized['total_invested']:.2f}",
+            f"{realized['total_proceeds']:.2f}",
+            f"[{pnl_color}]{pnl:+.2f}[/{pnl_color}]",
+            f"[{return_color}]{realized['return_pct']:+.2f}%[/{return_color}]",
+            str(realized['holding_days']),
+            realized['first_open_date'],
+            realized['last_close_date']
+        )
+
+    console.print(table)
+
+    # Summary
+    pnl_color = get_pnl_color(total_pnl, data_dir / "config.toml")
+    console.print(f"\n[bold]Total Realized P&L: [{pnl_color}]{total_pnl:+.2f}[/{pnl_color}][/bold]")
+    console.print(f"[dim]Showing {len(realized_positions)} position(s)[/dim]")
+
+
+
 
 
 if __name__ == "__main__":
