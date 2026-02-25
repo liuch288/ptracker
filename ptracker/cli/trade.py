@@ -139,12 +139,16 @@ def add_trade(
     transaction_repo = TransactionRepository(data_dir / "transactions.json")
     transaction_repo.insert(transaction_data)
     
-    # Recalculate position
+    # Recalculate position using incremental update
     holding_repo = HoldingRepository(data_dir / "holdings.json")
     realized_repo = RealizedRepository(data_dir / "realized.json")
     position_calc = PositionCalculator(transaction_repo, holding_repo, realized_repo)
     
-    position_update = position_calc.recalculate_position(asset.upper(), account, direction)
+    # Get existing holding
+    existing_holding = holding_repo.find_by_asset_account(asset.upper(), account, direction)
+    
+    # Update position incrementally
+    position_update = position_calc.update_position_incremental(transaction_data, existing_holding)
     
     if position_update:
         # Update or remove holding

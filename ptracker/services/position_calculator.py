@@ -5,6 +5,7 @@ from enum import Enum
 from datetime import datetime, date
 from ptracker.repositories import TransactionRepository, HoldingRepository, RealizedRepository
 from ptracker.models import Transaction, Holding
+from ptracker.utils.id_generator import generate_id
 
 
 class ClosureType(Enum):
@@ -43,53 +44,163 @@ class PositionCalculator:
         self.holding_repo = holding_repo
         self.realized_repo = realized_repo
     
-    def calculate_average_cost(
+    def update_position_incremental(
         self,
-        transactions: List[Dict[str, Any]],
-        direction: str
-    ) -> tuple[float, float]:
-        """Calculate weighted average cost for position.
+        transaction: Dict[str, Any],
+        existing_holding: Optional[Dict[str, Any]]
+    ) -> PositionUpdate:
+        """Update position incrementally based on new transaction.
         
         Args:
-            transactions: List of transaction dicts
-            direction: Position direction ('long' or 'short')
+            transaction: New transaction data
+            existing_holding: Current holding or None
             
         Returns:
-            Tuple of (avg_cost, total_invested/total_proceeds)
+            PositionUpdate with changes
         """
-        if direction == "long":
-            # For long positions: avg_cost = total_invested / total_quantity
-            total_invested = 0.0
-            total_quantity = 0.0
-            
-            for txn in transactions:
-                if txn['action'] == 'open' and txn['direction'] == 'long':
-                    cost = (abs(txn['quantity']) * txn['price']) + txn['fee']
-                    total_invested += cost
-                    total_quantity += abs(txn['quantity'])
-            
-            if total_quantity == 0:
-                return 0.0, 0.0
-            
-            avg_cost = total_invested / total_quantity
-            return avg_cost, total_invested
+        asset = transaction['asset']
+        account = transaction['account']
+        direction = transaction['direction']
+        action = transaction['action']
+        quantity = transaction['quantity']
+        price = transaction['price']
+        fee = transaction['fee']
+        currency = transaction['currency']
+        tx_date = transaction['datetime'][:10]
+        note = transaction['note']
         
-        else:  # short
-            # For short positions: avg_cost = total_proceeds / total_quantity
-            total_proceeds = 0.0
-            total_quantity = 0.0
+        # No existing holding - create new one
+        if not existing_holding or existing_holding['quantity'] == 0:
+            if action == 'open':
+                # New position
+                qty = abs(quantity)
+                if direction == 'long':
+                    total_invested = (qty * price) + fee
+                    avg_cost = total_invested / qty
+                else:  # short
+                    total_invested = (qty * price) - fee
+                    avg_cost = total_invested / qty
+                
+                holding_data = {
+                    'asset': asset,
+                    'account': account,
+                    'direction': direction,
+                    'quantity': qty,
+                    'avg_cost': avg_cost,
+                    'total_invested': total_invested,
+                    'currency': currency,
+                    'first_open_date': tx_date,
+                    'last_updated': tx_date,
+                    'note': note,
+                    'status': 'active'
+                }
+                
+                return PositionUpdate(holding=holding_data, closure_type=ClosureType.NONE)
+            else:
+                # Close without open - error case, but return None
+                return PositionUpdate(closure_type=ClosureType.NONE)
+        
+        # Has existing holding
+        old_quantity = existing_holding['quantity']
+        old_avg_cost = existing_holding['avg_cost']
+        old_total_invested = existing_holding['total_invested']
+        
+        if action == 'open':
+            # Add to position
+            add_qty = abs(quantity)
+            if direction == 'long':
+                add_cost = (add_qty * price) + fee
+            else:  # short
+                add_cost = (add_qty * price) - fee
             
-            for txn in transactions:
-                if txn['action'] == 'open' and txn['direction'] == 'short':
-                    proceeds = (abs(txn['quantity']) * txn['price']) - txn['fee']
-                    total_proceeds += proceeds
-                    total_quantity += abs(txn['quantity'])
+            new_quantity = old_quantity + add_qty
+            new_total_invested = old_total_invested + add_cost
+            new_avg_cost = new_total_invested / new_quantity
             
-            if total_quantity == 0:
-                return 0.0, 0.0
+            holding_data = {
+                **existing_holding,
+                'quantity': new_quantity,
+                'avg_cost': new_avg_cost,
+                'total_invested': new_total_invested,
+                'last_updated': tx_date,
+                'note': f"{existing_holding['note']}|{note}" if existing_holding['note'] and note else (existing_holding['note'] or note)
+            }
             
-            avg_cost = total_proceeds / total_quantity
-            return avg_cost, total_proceeds
+            return PositionUpdate(holding=holding_data, closure_type=ClosureType.NONE)
+        
+        else:  # action == 'close'
+            # Reduce position
+            close_qty = abs(quantity)
+            new_quantity = old_quantity - close_qty
+            
+            # Detect closure type
+            closure_type = self.detect_closure(old_quantity, new_quantity)
+            
+            # Calculate proceeds from closing
+            if direction == 'long':
+                close_proceeds = (close_qty * price) - fee
+                close_cost = close_qty * old_avg_cost
+                realized_pnl = close_proceeds - close_cost
+            else:  # short
+                close_cost = (close_qty * price) + fee
+                close_proceeds = close_qty * old_avg_cost
+                realized_pnl = close_proceeds - close_cost
+            
+            realized_data = None
+            holding_data = None
+            
+            if closure_type == ClosureType.FULL:
+                # Full closure
+                return_pct = (realized_pnl / old_total_invested * 100) if old_total_invested > 0 else 0.0
+                
+                first_date = datetime.fromisoformat(existing_holding['first_open_date'])
+                last_date = datetime.fromisoformat(tx_date)
+                holding_days = (last_date.date() - first_date.date()).days
+                
+                realized_data = {
+                    'id': generate_id('real'),
+                    'asset': asset,
+                    'account': account,
+                    'direction': direction,
+                    'first_open_date': existing_holding['first_open_date'],
+                    'last_close_date': tx_date,
+                    'holding_days': holding_days,
+                    'total_quantity': old_quantity,
+                    'total_invested': old_total_invested,
+                    'total_proceeds': close_proceeds if direction == 'long' else old_total_invested - realized_pnl,
+                    'total_fees': fee,
+                    'realized_pnl': realized_pnl,
+                    'return_pct': return_pct,
+                    'note': f"{existing_holding['note']}|{note}" if existing_holding['note'] and note else (existing_holding['note'] or note),
+                    'status': 'closed'
+                }
+                
+            elif closure_type == ClosureType.PARTIAL:
+                # Partial closure - net investment reduces by proceeds received
+                if direction == 'long':
+                    # For long: reduce investment by proceeds from sale
+                    new_total_invested = old_total_invested - close_proceeds
+                else:  # short
+                    # For short: reduce investment by cost to cover
+                    new_total_invested = old_total_invested - close_cost
+                
+                # Recalculate avg_cost based on new net investment
+                new_avg_cost = new_total_invested / new_quantity if new_quantity > 0 else 0.0
+                
+                holding_data = {
+                    **existing_holding,
+                    'quantity': new_quantity,
+                    'avg_cost': new_avg_cost,
+                    'total_invested': new_total_invested,
+                    'last_updated': tx_date,
+                    'note': f"{existing_holding['note']}|{note}" if existing_holding['note'] and note else (existing_holding['note'] or note)
+                }
+            
+            return PositionUpdate(
+                holding=holding_data,
+                realized=realized_data,
+                closure_type=closure_type
+            )
     
     def detect_closure(
         self,
@@ -131,162 +242,4 @@ class PositionCalculator:
         # No closure (position increased or stayed same)
         return ClosureType.NONE
     
-    def recalculate_position(
-        self,
-        asset: str,
-        account: str,
-        direction: str
-    ) -> Optional[PositionUpdate]:
-        """Recalculate position after transaction added/modified.
-        
-        Args:
-            asset: Asset code
-            account: Account name
-            direction: Position direction
-            
-        Returns:
-            PositionUpdate with holding changes and optional realized position
-        """
-        # Get all transactions for this position
-        transactions = self.transaction_repo.find_by_asset_account(asset, account, direction)
-        
-        if not transactions:
-            return None
-        
-        # Sort by datetime
-        transactions.sort(key=lambda t: t['datetime'])
-        
-        # Calculate net quantity
-        net_quantity = sum(t['quantity'] for t in transactions)
-        
-        # Get existing holding
-        existing_holding = self.holding_repo.find_by_asset_account(asset, account, direction)
-        old_quantity = existing_holding['quantity'] if existing_holding else 0.0
-        
-        # Detect closure
-        closure_type = self.detect_closure(old_quantity, net_quantity)
-        
-        # Calculate average cost and total invested
-        avg_cost, total_invested = self.calculate_average_cost(transactions, direction)
-        
-        # Get dates
-        first_open_date = transactions[0]['datetime'][:10] if transactions else date.today().isoformat()
-        last_updated = transactions[-1]['datetime'][:10] if transactions else date.today().isoformat()
-        
-        # Concatenate notes
-        notes = [t['note'] for t in transactions if t.get('note')]
-        note = '|'.join(notes) if notes else ''
-        
-        # Get currency from first transaction
-        currency = transactions[0]['currency'] if transactions else 'USD'
-        
-        # Create/update holding
-        holding_data = {
-            'asset': asset,
-            'account': account,
-            'direction': direction,
-            'quantity': net_quantity,
-            'avg_cost': avg_cost,
-            'total_invested': total_invested,
-            'currency': currency,
-            'first_open_date': first_open_date,
-            'last_updated': last_updated,
-            'note': note,
-            'status': 'active'
-        }
-        
-        realized_data = None
-        
-        # Handle closures
-        if closure_type in [ClosureType.FULL, ClosureType.REVERSED]:
-            # Create realized position
-            realized_data = self.create_realized_position(
-                transactions,
-                existing_holding or holding_data,
-                closure_type
-            )
-        
-        return PositionUpdate(
-            holding=holding_data if net_quantity != 0 else None,
-            realized=realized_data,
-            closure_type=closure_type
-        )
     
-    def create_realized_position(
-        self,
-        transactions: List[Dict[str, Any]],
-        holding: Dict[str, Any],
-        closure_type: ClosureType
-    ) -> Dict[str, Any]:
-        """Create realized position record from closed position.
-        
-        Args:
-            transactions: All transactions for this position
-            holding: Holding data
-            closure_type: Type of closure
-            
-        Returns:
-            Realized position data dict
-        """
-        from ptracker.utils.id_generator import generate_id
-        
-        # Separate opening and closing transactions
-        opening_txns = [t for t in transactions if t['action'] == 'open']
-        closing_txns = [t for t in transactions if t['action'] == 'close']
-        
-        # Calculate totals
-        total_quantity = sum(abs(t['quantity']) for t in opening_txns)
-        total_fees = sum(t['fee'] for t in transactions)
-        
-        # Calculate invested and proceeds
-        if holding['direction'] == 'long':
-            total_invested = sum(
-                (abs(t['quantity']) * t['price']) + t['fee']
-                for t in opening_txns
-            )
-            total_proceeds = sum(
-                (abs(t['quantity']) * t['price']) - t['fee']
-                for t in closing_txns
-            )
-            realized_pnl = total_proceeds - total_invested
-        else:  # short
-            total_proceeds = sum(
-                (abs(t['quantity']) * t['price']) - t['fee']
-                for t in opening_txns
-            )
-            total_cost = sum(
-                (abs(t['quantity']) * t['price']) + t['fee']
-                for t in closing_txns
-            )
-            total_invested = total_proceeds  # For return calculation
-            realized_pnl = total_proceeds - total_cost
-        
-        # Calculate return percentage
-        return_pct = (realized_pnl / total_invested * 100) if total_invested > 0 else 0.0
-        
-        # Calculate holding days
-        first_date = datetime.fromisoformat(transactions[0]['datetime'].replace('Z', '+00:00'))
-        last_date = datetime.fromisoformat(transactions[-1]['datetime'].replace('Z', '+00:00'))
-        holding_days = (last_date.date() - first_date.date()).days
-        
-        # Concatenate notes
-        notes = [t['note'] for t in transactions if t.get('note')]
-        note = '|'.join(notes) if notes else ''
-        
-        return {
-            'id': generate_id('real'),
-            'asset': holding['asset'],
-            'account': holding['account'],
-            'direction': holding['direction'],
-            'first_open_date': transactions[0]['datetime'][:10],
-            'last_close_date': transactions[-1]['datetime'][:10],
-            'holding_days': holding_days,
-            'total_quantity': total_quantity,
-            'total_invested': total_invested,
-            'total_proceeds': total_proceeds,
-            'total_fees': total_fees,
-            'realized_pnl': realized_pnl,
-            'return_pct': return_pct,
-            'note': note,
-            'status': 'closed'
-        }
