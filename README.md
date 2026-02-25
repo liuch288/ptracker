@@ -11,6 +11,7 @@ Personal investment portfolio tracking CLI tool for managing diverse portfolios 
 - Local JSON-based storage with TinyDB
 - Price queries with yfinance and akshare fallback
 - Rich terminal output with tables and colors
+- Customizable color scheme (green-up or red-up)
 
 ## Installation
 
@@ -105,7 +106,12 @@ ptracker --help
 
 1. 初始化系统：
 ```bash
+# 使用默认颜色方案（绿涨红跌）
 ptracker init
+
+# 或指定颜色方案
+ptracker init --color-scheme green_up  # 绿涨红跌（西方风格）
+ptracker init --color-scheme red_up    # 红涨绿跌（中国风格）
 ```
 
 2. 添加账户：
@@ -156,7 +162,8 @@ ptracker trade add sell AAPL 100 160.0 --currency USD --action close --direction
 ## 命令概览
 
 ```bash
-ptracker init                    # 初始化数据目录
+ptracker init                    # 初始化数据目录（可选 --color-scheme）
+ptracker config show/set/color   # 配置管理
 ptracker account add/list/query  # 账户管理
 ptracker trade add/list          # 交易记录
 ptracker query holdings/value    # 查询持仓和价值

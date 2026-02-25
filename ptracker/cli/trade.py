@@ -11,6 +11,7 @@ from ptracker.services.validation import ValidationService
 from ptracker.services.position_calculator import PositionCalculator, ClosureType
 from ptracker.utils.id_generator import generate_id
 from ptracker.config import ConfigManager
+from ptracker.utils.color_helper import get_pnl_color
 
 console = Console()
 app = typer.Typer(help="Manage trades and transactions")
@@ -139,12 +140,16 @@ def add_trade(
     transaction_repo = TransactionRepository(data_dir / "transactions.json")
     transaction_repo.insert(transaction_data)
     
-    # Recalculate position
+    # Recalculate position using incremental update
     holding_repo = HoldingRepository(data_dir / "holdings.json")
     realized_repo = RealizedRepository(data_dir / "realized.json")
     position_calc = PositionCalculator(transaction_repo, holding_repo, realized_repo)
     
-    position_update = position_calc.recalculate_position(asset.upper(), account, direction)
+    # Get existing holding
+    existing_holding = holding_repo.find_by_asset_account(asset.upper(), account, direction)
+    
+    # Update position incrementally
+    position_update = position_calc.update_position_incremental(transaction_data, existing_holding)
     
     if position_update:
         # Update or remove holding
@@ -184,7 +189,7 @@ def add_trade(
             console.print(f"\n[yellow]⚠️  Position fully closed[/yellow]")
             if position_update.realized:
                 pnl = position_update.realized['realized_pnl']
-                pnl_color = "green" if pnl >= 0 else "red"
+                pnl_color = get_pnl_color(pnl, data_dir / "config.toml")
                 console.print(f"  Realized P&L: [{pnl_color}]{pnl:+.2f}[/{pnl_color}] {currency}")
         elif position_update.closure_type == ClosureType.PARTIAL:
             console.print(f"\n[yellow]⚠️  Position partially closed[/yellow]")

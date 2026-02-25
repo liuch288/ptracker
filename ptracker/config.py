@@ -14,6 +14,7 @@ DEFAULT_CONFIG = {
     "display": {
         "date_format": "%Y-%m-%d %H:%M:%S",
         "decimal_places": 2,
+        "color_scheme": "green_up",  # "green_up" or "red_up"
     },
     "api": {
         "price_cache_seconds": 60,
@@ -136,3 +137,11 @@ class ConfigManager:
             Cost basis method ('average' or 'fifo')
         """
         return self.get('general.cost_basis_method', 'average')
+    
+    def get_color_scheme(self) -> str:
+        """Get color scheme preference.
+        
+        Returns:
+            Color scheme ('green_up' or 'red_up')
+        """
+        return self.get('display.color_scheme', 'green_up')

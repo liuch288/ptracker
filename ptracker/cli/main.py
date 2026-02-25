@@ -2,7 +2,7 @@
 
 import typer
 from ptracker.cli.init import init_command
-from ptracker.cli import account, trade, query
+from ptracker.cli import account, trade, query, config
 from ptracker import __version__
 
 
@@ -23,6 +23,7 @@ app = typer.Typer(
 app.add_typer(account.app, name="account")
 app.add_typer(trade.app, name="trade")
 app.add_typer(query.app, name="query")
+app.add_typer(config.app, name="config")
 
 
 @app.callback()
@@ -41,9 +42,16 @@ def main(
 
 
 @app.command()
-def init():
+def init(
+    color_scheme: str = typer.Option(
+        "green_up",
+        "--color-scheme",
+        "-c",
+        help="Color scheme: 'green_up' (green=profit, red=loss) or 'red_up' (red=profit, green=loss)"
+    )
+):
     """Initialize ptracker data directory and configuration files."""
-    init_command()
+    init_command(color_scheme)
 
 
 @app.command()
