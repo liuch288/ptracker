@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# 测试和覆盖率
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 类型检查
+.mypy_cache/
+
+# macOS
+.DS_Store
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# ptracker 用户数据（不提交个人数据）
+.ptracker/
+
+# 环境变量
+.env
+
+.kiro
+PROGRESS.md
