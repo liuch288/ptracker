@@ -25,7 +25,9 @@ def query_holdings(
     account: Optional[str] = typer.Option(None, "--account", "-a", help="Filter by account"),
     asset: Optional[str] = typer.Option(None, "--asset", help="Filter by asset"),
     sort_by: Optional[str] = typer.Option(None, "--sort", "-s", help="Sort by field (asset, quantity, avg_cost, total_invested, last_updated)"),
-    currency: Optional[str] = typer.Option(None, "--currency", help="Convert values to currency"),
+    currency: Optional[str] = typer.Option(None, "--currency", "-c", help="Convert all values to currency"),
+    detail_currency: Optional[str] = typer.Option(None, "--detail-currency", "-d", help="Currency for detail display (or 'mix' for original)"),
+    total_currency: Optional[str] = typer.Option(None, "--total-currency", "-t", help="Currency for total calculation"),
 ):
     """Query current holdings."""
     data_dir = get_data_dir()
@@ -34,10 +36,28 @@ def query_holdings(
         console.print("[red]Error: ptracker not initialized. Run 'ptracker init' first.[/red]")
         raise typer.Exit(1)
     
-    # Get default currency from config if not specified
-    if not currency:
-        config = ConfigManager(data_dir / "config.toml")
-        currency = config.get_default_currency()
+    # Get default currency from config
+    config = ConfigManager(data_dir / "config.toml")
+    default_currency = config.get_default_currency()
+    
+    # Determine currencies with priority:
+    # 1. If --currency specified: both detail and total use it
+    # 2. If --detail-currency or --total-currency specified: they override
+    # 3. If nothing specified: detail='mix', total=default
+    if currency:
+        # --currency sets both
+        final_detail_currency = currency
+        final_total_currency = currency
+    else:
+        # No --currency, use defaults
+        final_detail_currency = 'mix'
+        final_total_currency = default_currency
+    
+    # Override with specific options if provided
+    if detail_currency:
+        final_detail_currency = detail_currency
+    if total_currency:
+        final_total_currency = total_currency
     
     # Get holdings
     holding_repo = HoldingRepository(data_dir / "holdings.json")
@@ -66,10 +86,8 @@ def query_holdings(
         # Default sort by asset
         holdings.sort(key=lambda h: h['asset'])
     
-    # Currency conversion (if specified)
-    if currency:
-        price_service = PriceService()
-        console.print(f"[dim]Converting to {currency}...[/dim]\n")
+    # Initialize price service
+    price_service = PriceService()
     
     # Create table for active holdings
     if holdings:
@@ -91,12 +109,22 @@ def query_holdings(
             avg_cost = holding['avg_cost']
             curr = holding['currency']
             
-            # Convert currency if needed
-            if currency and curr != currency:
-                rate = price_service.get_exchange_rate(curr, currency)
+            # For detail display
+            display_invested = invested
+            display_avg_cost = avg_cost
+            display_curr = curr
+            
+            # Convert detail if needed (not 'mix')
+            if final_detail_currency != 'mix' and curr != final_detail_currency:
+                rate = price_service.get_exchange_rate(curr, final_detail_currency)
+                display_invested = invested * rate
+                display_avg_cost = avg_cost * rate
+                display_curr = final_detail_currency
+            
+            # Convert for total calculation
+            if curr != final_total_currency:
+                rate = price_service.get_exchange_rate(curr, final_total_currency)
                 invested = invested * rate
-                avg_cost = avg_cost * rate
-                curr = currency
             
             total_invested += invested
             
@@ -105,15 +133,15 @@ def query_holdings(
                 holding['account'],
                 holding['direction'][:1].upper(),
                 f"{holding['quantity']:.2f}",
-                f"{avg_cost:.2f}",
-                f"{invested:.2f}",
-                curr,
+                f"{display_avg_cost:.2f}",
+                f"{display_invested:.2f}",
+                display_curr,
                 holding['first_open_date'],
                 holding['last_updated']
             )
         
         console.print(table)
-        console.print(f"\n[bold]Total Invested: {total_invested:.2f} {currency}[/bold]")
+        console.print(f"\n[bold]Total Invested: {total_invested:.2f} {final_total_currency}[/bold]")
 
 
 @app.command("value")
@@ -244,12 +272,35 @@ def query_value(
 def query_realized(
     account: Optional[str] = typer.Option(None, "--account", "-a", help="Filter by account"),
     asset: Optional[str] = typer.Option(None, "--asset", help="Filter by asset"),
-    currency: Optional[str] = typer.Option(None, "--currency", "-c", help="Convert to currency"),
+    currency: Optional[str] = typer.Option(None, "--currency", "-c", help="Convert all values to currency"),
+    detail_currency: Optional[str] = typer.Option(None, "--detail-currency", "-d", help="Currency for detail display (or 'mix' for original)"),
+    total_currency: Optional[str] = typer.Option(None, "--total-currency", "-t", help="Currency for total calculation"),
     sort_by: Optional[str] = typer.Option("date", "--sort", "-s", help="Sort by: date, pnl, return, days (default: date)"),
     limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Limit number of results"),
 ):
     """Query realized (closed) positions."""
     data_dir = get_data_dir()
+
+    if not data_dir.exists():
+        console.print("[red]Error: ptracker not initialized. Run 'ptracker init' first.[/red]")
+        raise typer.Exit(1)
+
+    # Get default currency from config
+    config = ConfigManager(data_dir / "config.toml")
+    default_currency = config.get_default_currency()
+    
+    # Determine currencies (same logic as holdings)
+    if currency:
+        final_detail_currency = currency
+        final_total_currency = currency
+    else:
+        final_detail_currency = 'mix'
+        final_total_currency = default_currency
+    
+    if detail_currency:
+        final_detail_currency = detail_currency
+    if total_currency:
+        final_total_currency = total_currency
 
     if not data_dir.exists():
         console.print("[red]Error: ptracker not initialized. Run 'ptracker init' first.[/red]")
@@ -319,15 +370,26 @@ def query_realized(
         pnl = realized['realized_pnl']
         curr = realized.get('currency', 'USD')
         
-        # Convert currency if needed
-        if currency and curr != currency:
-            rate = price_service.get_exchange_rate(curr, currency)
-            invested = invested * rate
-            proceeds = proceeds * rate
-            pnl = pnl * rate
-            curr = currency
+        # For detail display
+        display_invested = invested
+        display_proceeds = proceeds
+        display_pnl = pnl
+        display_curr = curr
         
-        pnl_color = get_pnl_color(pnl, data_dir / "config.toml")
+        # Convert detail if needed (not 'mix')
+        if final_detail_currency != 'mix' and curr != final_detail_currency:
+            rate = price_service.get_exchange_rate(curr, final_detail_currency)
+            display_invested = invested * rate
+            display_proceeds = proceeds * rate
+            display_pnl = pnl * rate
+            display_curr = final_detail_currency
+        
+        # Convert for total calculation
+        if curr != final_total_currency:
+            rate = price_service.get_exchange_rate(curr, final_total_currency)
+            pnl = pnl * rate
+        
+        pnl_color = get_pnl_color(display_pnl, data_dir / "config.toml")
         return_color = get_pnl_color(realized['return_pct'], data_dir / "config.toml")
 
         total_pnl += pnl
@@ -337,11 +399,11 @@ def query_realized(
             realized['account'],
             realized['direction'][:1].upper(),
             f"{realized['total_quantity']:.2f}",
-            f"{invested:.2f}",
-            f"{proceeds:.2f}",
-            f"[{pnl_color}]{pnl:+.2f}[/{pnl_color}]",
+            f"{display_invested:.2f}",
+            f"{display_proceeds:.2f}",
+            f"[{pnl_color}]{display_pnl:+.2f}[/{pnl_color}]",
             f"[{return_color}]{realized['return_pct']:+.2f}%[/{return_color}]",
-            curr,
+            display_curr,
             str(realized['holding_days']),
             realized['first_open_date'],
             realized['last_close_date']
@@ -351,7 +413,7 @@ def query_realized(
 
     # Summary
     pnl_color = get_pnl_color(total_pnl, data_dir / "config.toml")
-    console.print(f"\n[bold]Total Realized P&L: [{pnl_color}]{total_pnl:+.2f}[/{pnl_color}] {currency}[/bold]")
+    console.print(f"\n[bold]Total Realized P&L: [{pnl_color}]{total_pnl:+.2f}[/{pnl_color}] {final_total_currency}[/bold]")
     console.print(f"[dim]Showing {len(realized_positions)} position(s)[/dim]")
 
 
