@@ -171,6 +171,7 @@ class PositionCalculator:
                     'total_fees': fee,
                     'realized_pnl': realized_pnl,
                     'return_pct': return_pct,
+                    'currency': currency,
                     'note': f"{existing_holding['note']}|{note}" if existing_holding['note'] and note else (existing_holding['note'] or note),
                     'status': 'closed'
                 }

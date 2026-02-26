@@ -109,6 +109,7 @@ def test_realized_position_model():
         total_fees=20.0,
         realized_pnl=1980.0,
         return_pct=19.8,
+        currency="USD",
         note="Test realized position"
     )
     assert realized.status == "closed"
