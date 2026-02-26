@@ -18,13 +18,16 @@ class BaseRepository:
         self.db_path = db_path
         self.lock_path = db_path.with_suffix('.lock')
     
-    def _read(self) -> TinyDB:
-        """Open database for reading (no lock).
+    def _read(self) -> tuple[TinyDB, FileLock]:
+        """Open database for reading (with shared lock).
         
         Returns:
-            TinyDB instance
+            Tuple of (TinyDB instance, FileLock instance)
         """
-        return TinyDB(self.db_path)
+        lock = FileLock(self.lock_path, timeout=10)
+        lock.acquire()
+        db = TinyDB(self.db_path)
+        return db, lock
     
     def _write(self) -> tuple[TinyDB, FileLock]:
         """Open database for writing (with exclusive lock).
@@ -97,11 +100,12 @@ class BaseRepository:
         Returns:
             List of all documents
         """
-        db = self._read()
+        db, lock = self._read()
         try:
             return db.all()
         finally:
             db.close()
+            lock.release()
     
     def find_by_id(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """Find document by ID.
@@ -112,10 +116,11 @@ class BaseRepository:
         Returns:
             Document data or None if not found
         """
-        db = self._read()
+        db, lock = self._read()
         try:
             Q = Query()
             result = db.search(Q.id == doc_id)
             return result[0] if result else None
         finally:
             db.close()
+            lock.release()

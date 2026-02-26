@@ -24,7 +24,7 @@ class TransactionRepository(BaseRepository):
         Returns:
             List of matching transactions
         """
-        db = self._read()
+        db, lock = self._read()
         try:
             Q = Query()
             return db.search(
@@ -34,3 +34,4 @@ class TransactionRepository(BaseRepository):
             )
         finally:
             db.close()
+            lock.release()
