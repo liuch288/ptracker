@@ -24,7 +24,7 @@ class HoldingRepository(BaseRepository):
         Returns:
             Holding data or None if not found
         """
-        db = self._read()
+        db, lock = self._read()
         try:
             Q = Query()
             result = db.search(
@@ -35,6 +35,7 @@ class HoldingRepository(BaseRepository):
             return result[0] if result else None
         finally:
             db.close()
+            lock.release()
     
     def upsert(self, holding: Dict[str, Any]) -> None:
         """Insert or update holding.

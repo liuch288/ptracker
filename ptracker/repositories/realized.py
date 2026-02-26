@@ -18,7 +18,7 @@ class RealizedRepository(BaseRepository):
         Returns:
             List of realized positions closed within date range
         """
-        db = self._read()
+        db, lock = self._read()
         try:
             Q = Query()
             return db.search(
@@ -27,3 +27,4 @@ class RealizedRepository(BaseRepository):
             )
         finally:
             db.close()
+            lock.release()

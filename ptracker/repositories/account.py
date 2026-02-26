@@ -17,10 +17,11 @@ class AccountRepository(BaseRepository):
         Returns:
             Account data or None if not found
         """
-        db = self._read()
+        db, lock = self._read()
         try:
             Q = Query()
             result = db.search(Q.name == name)
             return result[0] if result else None
         finally:
             db.close()
+            lock.release()
