@@ -103,16 +103,20 @@ class ValidationService:
         direction: str
     ) -> bool:
         """Validate quantity sign matches transaction type.
-        
+
         Args:
             quantity: Transaction quantity
-            tx_type: Transaction type ('buy' or 'sell')
-            action: Transaction action ('open' or 'close')
+            tx_type: Transaction type ('buy', 'sell', or 'dividend')
+            action: Transaction action ('open', 'close', or 'income')
             direction: Position direction ('long' or 'short')
-            
+
         Returns:
             True if valid, False otherwise
         """
+        # Dividends don't use quantity validation
+        if tx_type == "dividend" and action == "income":
+            return True
+
         # Determine expected sign
         if tx_type == "buy" and action == "open" and direction == "long":
             expected_positive = True
@@ -125,9 +129,10 @@ class ValidationService:
         else:
             # Invalid combination
             return False
-        
+
         # Check if sign matches expectation
         if expected_positive:
             return quantity > 0
         else:
             return quantity < 0
+

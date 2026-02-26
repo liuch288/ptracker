@@ -1,6 +1,6 @@
 [project]
 name = "ptracker"
-version = "0.1.2"
+version = "0.1.3"
 description = "Personal investment portfolio tracking CLI tool"
 authors = [
     {name = "ptracker", email = "ptracker@example.com"}
