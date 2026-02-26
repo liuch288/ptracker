@@ -6,12 +6,12 @@ from pydantic import BaseModel, field_validator
 
 
 class Transaction(BaseModel):
-    """Transaction record for buy/sell trades."""
-    
+    """Transaction record for buy/sell trades and dividends."""
+
     id: str
     datetime: dt
-    type: Literal["buy", "sell"]
-    action: Literal["open", "close"]
+    type: Literal["buy", "sell", "dividend"]
+    action: Literal["open", "close", "income"]
     direction: Literal["long", "short"]
     asset: str
     quantity: float
@@ -20,26 +20,31 @@ class Transaction(BaseModel):
     fee: float = 0.0
     account: str
     note: str = ""
-    
+
     @field_validator("quantity")
     @classmethod
     def validate_quantity_sign(cls, v: float, info) -> float:
         """Ensure quantity sign matches type, action, and direction.
-        
+
         Rules:
         - buy + open + long → positive
         - buy + close + short → positive
         - sell + close + long → negative
         - sell + open + short → negative
+        - dividend + income + long → 0 (quantity not used for dividends)
         """
         values = info.data
         if not values:
             return v
-            
+
         tx_type = values.get("type")
         action = values.get("action")
         direction = values.get("direction")
-        
+
+        # Dividends don't use quantity validation
+        if tx_type == "dividend":
+            return v
+
         # Determine expected sign
         if tx_type == "buy" and action == "open" and direction == "long":
             expected_positive = True
@@ -52,7 +57,7 @@ class Transaction(BaseModel):
         else:
             # Invalid combination, let it pass for now
             return v
-        
+
         # Check if sign matches expectation
         if expected_positive and v < 0:
             raise ValueError(
@@ -62,5 +67,6 @@ class Transaction(BaseModel):
             raise ValueError(
                 f"Quantity must be negative for {tx_type}/{action}/{direction}"
             )
-        
+
         return v
+

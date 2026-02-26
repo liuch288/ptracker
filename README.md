@@ -8,6 +8,7 @@ Personal investment portfolio tracking CLI tool for managing diverse portfolios 
 - Multi-market support (Hong Kong stocks, US stocks, A-shares, cryptocurrencies, futures)
 - Long and short position tracking
 - Automatic position calculation and P&L tracking
+- Dividend income tracking
 - Local JSON-based storage with TinyDB
 - Price queries with yfinance and akshare fallback
 - Rich terminal output with tables and colors
@@ -127,6 +128,9 @@ ptracker trade add buy AAPL 100 150.0 --currency USD --action open --direction l
 
 # 买入港股
 ptracker trade add buy 0700.HK 500 320.5 --currency HKD --action open --direction long --account futu --note "建仓腾讯"
+
+# 记录分红
+ptracker trade add dividend AAPL 0 50 --currency USD --note "Q1 dividend"
 ```
 
 4. 查看持仓：
