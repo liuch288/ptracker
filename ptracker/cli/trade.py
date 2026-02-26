@@ -26,8 +26,8 @@ def get_data_dir() -> Path:
 def add_trade(
     trade_type: str = typer.Argument(..., help="Trade type: buy, sell, or dividend"),
     asset: str = typer.Argument(..., help="Asset code (e.g., AAPL, 0700.HK)"),
-    quantity: float = typer.Argument(..., help="Quantity (positive number, 0 for dividend)"),
-    price: float = typer.Argument(..., help="Price per unit (for dividend: total dividend amount)"),
+    amount: float = typer.Argument(..., help="For buy/sell: quantity; For dividend: dividend amount"),
+    price: Optional[float] = typer.Argument(None, help="Price per unit (not used for dividend)"),
     currency: str = typer.Option(..., "--currency", "-c", help="Currency code (e.g., USD, HKD)"),
     action: str = typer.Option("open", "--action", "-a", help="Action: open, close, or income (for dividend)"),
     direction: str = typer.Option("long", "--direction", "-d", help="Direction: long or short"),
@@ -50,10 +50,19 @@ def add_trade(
 
     trade_type = trade_type.lower()
 
-    # Handle dividend type
+    # Handle dividend type - amount is the dividend, no price needed
     if trade_type == 'dividend':
         action = 'income'
-        quantity = 0.0  # Dividends don't use quantity
+        quantity = 0.0
+        dividend_amount = amount
+        actual_price = dividend_amount  # Store dividend amount in price field
+    else:
+        # For buy/sell: amount is quantity, price is required
+        if price is None:
+            console.print(f"[red]Error: Price is required for {trade_type} transactions.[/red]")
+            raise typer.Exit(1)
+        quantity = amount
+        actual_price = price
 
     # Validate action
     if action.lower() not in ['open', 'close', 'income']:
@@ -127,7 +136,7 @@ def add_trade(
         'direction': direction,
         'asset': asset.upper(),
         'quantity': signed_quantity,
-        'price': price,
+        'price': actual_price,
         'currency': currency.upper(),
         'fee': fee,
         'account': account,
@@ -158,11 +167,11 @@ def add_trade(
             old_quantity = existing_holding['quantity']
             
             # Dividend reduces the cost basis
-            new_total_invested = old_total_invested - price
+            new_total_invested = old_total_invested - actual_price
             
             # Prevent negative total_invested
             if new_total_invested < 0:
-                console.print(f"[yellow]⚠️  Warning: Dividend amount ({price}) exceeds total invested ({old_total_invested:.2f})[/yellow]")
+                console.print(f"[yellow]⚠️  Warning: Dividend amount ({actual_price}) exceeds total invested ({old_total_invested:.2f})[/yellow]")
                 console.print(f"[yellow]   Setting total_invested to 0[/yellow]")
                 new_total_invested = 0
             
@@ -179,7 +188,7 @@ def add_trade(
             holding_repo.upsert(updated_holding)
             
             console.print(f"[green]✓[/green] Dividend recorded: [bold]{tx_id}[/bold]")
-            console.print(f"  DIVIDEND {asset.upper()}: {price} {currency}")
+            console.print(f"  DIVIDEND {asset.upper()}: {actual_price} {currency}")
             console.print(f"  Account: {account}")
             console.print(f"  Date: {tx_date.strftime('%Y-%m-%d %H:%M:%S')}")
             if note:
@@ -189,7 +198,7 @@ def add_trade(
             console.print(f"  Avg cost: {existing_holding['avg_cost']:.2f} → {new_avg_cost:.2f} {currency}")
         else:
             console.print(f"[green]✓[/green] Dividend recorded: [bold]{tx_id}[/bold]")
-            console.print(f"  DIVIDEND {asset.upper()}: {price} {currency}")
+            console.print(f"  DIVIDEND {asset.upper()}: {actual_price} {currency}")
             console.print(f"  Account: {account}")
             console.print(f"  Date: {tx_date.strftime('%Y-%m-%d %H:%M:%S')}")
             if note:
@@ -237,7 +246,7 @@ def add_trade(
 
     # Success message
     console.print(f"[green]✓[/green] Transaction recorded: [bold]{tx_id}[/bold]")
-    console.print(f"  {trade_type.upper()} {abs(signed_quantity)} {asset.upper()} @ {price} {currency}")
+    console.print(f"  {trade_type.upper()} {abs(signed_quantity)} {asset.upper()} @ {actual_price} {currency}")
     console.print(f"  Action: {action}, Direction: {direction}")
     console.print(f"  Account: {account}")
     console.print(f"  Date: {tx_date.strftime('%Y-%m-%d %H:%M:%S')}")
