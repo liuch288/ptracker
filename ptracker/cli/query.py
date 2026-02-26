@@ -419,6 +419,289 @@ def query_realized(
 
 
 
+@app.command("pnl")
+def query_pnl(
+    account: Optional[str] = typer.Option(None, "--account", "-a", help="Filter by account"),
+    currency: Optional[str] = typer.Option(None, "--currency", "-c", help="Convert all values to currency"),
+    detail_currency: Optional[str] = typer.Option(None, "--detail-currency", "-d", help="Currency for detail display (or 'mix')"),
+    total_currency: Optional[str] = typer.Option(None, "--total-currency", "-t", help="Currency for total calculation"),
+    detail: bool = typer.Option(False, "--detail", help="Show detailed breakdown by asset"),
+    realized_only: bool = typer.Option(False, "--realized-only", help="Show only realized P&L"),
+    unrealized_only: bool = typer.Option(False, "--unrealized-only", help="Show only unrealized P&L"),
+):
+    """Query profit and loss (realized and unrealized)."""
+    data_dir = get_data_dir()
+    
+    if not data_dir.exists():
+        console.print("[red]Error: ptracker not initialized. Run 'ptracker init' first.[/red]")
+        raise typer.Exit(1)
+    
+    # Get default currency from config
+    config = ConfigManager(data_dir / "config.toml")
+    default_currency = config.get_default_currency()
+    
+    # Determine currencies (same logic as holdings/realized)
+    if currency:
+        final_detail_currency = currency
+        final_total_currency = currency
+    else:
+        final_detail_currency = 'mix'
+        final_total_currency = default_currency
+    
+    if detail_currency:
+        final_detail_currency = detail_currency
+    if total_currency:
+        final_total_currency = total_currency
+    
+    # Initialize services
+    price_service = PriceService()
+    pnl_calculator = PnLCalculator(price_service)
+    
+    # Get data
+    holding_repo = HoldingRepository(data_dir / "holdings.json")
+    realized_repo = RealizedRepository(data_dir / "realized.json")
+    
+    holdings = holding_repo.find_all()
+    realized_positions = realized_repo.find_all()
+    
+    # Apply account filter
+    if account:
+        holdings = [h for h in holdings if h['account'] == account]
+        realized_positions = [r for r in realized_positions if r['account'] == account]
+    
+    # Calculate unrealized P&L
+    unrealized_total_invested = 0.0
+    unrealized_total_current = 0.0
+    unrealized_by_asset = {}
+    
+    if not unrealized_only and not realized_only:
+        show_unrealized = True
+        show_realized = True
+    elif unrealized_only:
+        show_unrealized = True
+        show_realized = False
+    else:  # realized_only
+        show_unrealized = False
+        show_realized = True
+    
+    if show_unrealized and holdings:
+        console.print("[dim]Fetching current prices...[/dim]\n")
+        
+        for holding in holdings:
+            # Get current price
+            quote = price_service.get_price(holding['asset'])
+            
+            if not quote:
+                console.print(f"[yellow]Warning: Could not fetch price for {holding['asset']}, skipping...[/yellow]")
+                continue
+            
+            current_price = quote.price
+            
+            # Calculate values
+            invested = holding['total_invested']
+            current_value = abs(holding['quantity']) * current_price
+            curr = holding['currency']
+            
+            # For detail display
+            display_invested = invested
+            display_current = current_value
+            display_curr = curr
+            
+            # Convert detail if needed (not 'mix')
+            if final_detail_currency != 'mix' and curr != final_detail_currency:
+                rate = price_service.get_exchange_rate(curr, final_detail_currency)
+                display_invested = invested * rate
+                display_current = current_value * rate
+                display_curr = final_detail_currency
+            
+            # Convert for total calculation
+            if curr != final_total_currency:
+                rate = price_service.get_exchange_rate(curr, final_total_currency)
+                invested = invested * rate
+                current_value = current_value * rate
+            
+            unrealized_total_invested += invested
+            unrealized_total_current += current_value
+            
+            # For detail breakdown
+            if detail:
+                key = f"{holding['asset']}|{holding['account']}"
+                if key not in unrealized_by_asset:
+                    unrealized_by_asset[key] = {
+                        'asset': holding['asset'],
+                        'account': holding['account'],
+                        'invested': 0.0,
+                        'current': 0.0,
+                        'currency': display_curr
+                    }
+                unrealized_by_asset[key]['invested'] += display_invested
+                unrealized_by_asset[key]['current'] += display_current
+    
+    # Calculate realized P&L
+    realized_total_invested = 0.0
+    realized_total_proceeds = 0.0
+    realized_total_pnl = 0.0
+    realized_by_asset = {}
+    
+    if show_realized and realized_positions:
+        for realized in realized_positions:
+            invested = realized['total_invested']
+            proceeds = realized['total_proceeds']
+            pnl = realized['realized_pnl']
+            curr = realized.get('currency', 'USD')
+            
+            # For detail display
+            display_invested = invested
+            display_proceeds = proceeds
+            display_pnl = pnl
+            display_curr = curr
+            
+            # Convert detail if needed (not 'mix')
+            if final_detail_currency != 'mix' and curr != final_detail_currency:
+                rate = price_service.get_exchange_rate(curr, final_detail_currency)
+                display_invested = invested * rate
+                display_proceeds = proceeds * rate
+                display_pnl = pnl * rate
+                display_curr = final_detail_currency
+            
+            # Convert for total calculation
+            if curr != final_total_currency:
+                rate = price_service.get_exchange_rate(curr, final_total_currency)
+                invested = invested * rate
+                proceeds = proceeds * rate
+                pnl = pnl * rate
+            
+            realized_total_invested += invested
+            realized_total_proceeds += proceeds
+            realized_total_pnl += pnl
+            
+            # For detail breakdown
+            if detail:
+                key = f"{realized['asset']}|{realized['account']}"
+                if key not in realized_by_asset:
+                    realized_by_asset[key] = {
+                        'asset': realized['asset'],
+                        'account': realized['account'],
+                        'invested': 0.0,
+                        'proceeds': 0.0,
+                        'pnl': 0.0,
+                        'currency': display_curr
+                    }
+                realized_by_asset[key]['invested'] += display_invested
+                realized_by_asset[key]['proceeds'] += display_proceeds
+                realized_by_asset[key]['pnl'] += display_pnl
+    
+    # Display results
+    console.print("[bold]P&L Summary[/bold]")
+    console.print("━" * 60)
+    
+    if show_unrealized:
+        unrealized_pnl = unrealized_total_current - unrealized_total_invested
+        unrealized_return = (unrealized_pnl / unrealized_total_invested * 100) if unrealized_total_invested > 0 else 0.0
+        
+        pnl_color = get_pnl_color(unrealized_pnl, data_dir / "config.toml")
+        return_color = get_pnl_color(unrealized_return, data_dir / "config.toml")
+        
+        console.print("\n[bold cyan]Unrealized P&L (Current Holdings)[/bold cyan]")
+        console.print(f"  Total Invested:     {unrealized_total_invested:>15,.2f} {final_total_currency}")
+        console.print(f"  Current Value:      {unrealized_total_current:>15,.2f} {final_total_currency}")
+        console.print(f"  Unrealized P&L:     [{pnl_color}]{unrealized_pnl:>+15,.2f}[/{pnl_color}] {final_total_currency}")
+        console.print(f"  Return:             [{return_color}]{unrealized_return:>+15.2f}%[/{return_color}]")
+        
+        if detail and unrealized_by_asset:
+            console.print("\n[bold]Unrealized P&L by Asset[/bold]")
+            table = Table(show_header=True, header_style="bold")
+            table.add_column("Asset", style="bold")
+            table.add_column("Account")
+            table.add_column("Invested", justify="right")
+            table.add_column("Current Value", justify="right")
+            table.add_column("P&L", justify="right")
+            table.add_column("Return %", justify="right")
+            table.add_column("Currency")
+            
+            for key, data in sorted(unrealized_by_asset.items()):
+                pnl = data['current'] - data['invested']
+                ret = (pnl / data['invested'] * 100) if data['invested'] > 0 else 0.0
+                
+                pnl_color = get_pnl_color(pnl, data_dir / "config.toml")
+                ret_color = get_pnl_color(ret, data_dir / "config.toml")
+                
+                table.add_row(
+                    data['asset'],
+                    data['account'],
+                    f"{data['invested']:,.2f}",
+                    f"{data['current']:,.2f}",
+                    f"[{pnl_color}]{pnl:+,.2f}[/{pnl_color}]",
+                    f"[{ret_color}]{ret:+.2f}%[/{ret_color}]",
+                    data['currency']
+                )
+            
+            console.print(table)
+            console.print(f"[bold]Subtotal Unrealized: [{pnl_color}]{unrealized_pnl:+,.2f}[/{pnl_color}] {final_total_currency}[/bold]")
+    
+    if show_realized:
+        realized_return = (realized_total_pnl / realized_total_invested * 100) if realized_total_invested > 0 else 0.0
+        
+        pnl_color = get_pnl_color(realized_total_pnl, data_dir / "config.toml")
+        return_color = get_pnl_color(realized_return, data_dir / "config.toml")
+        
+        console.print("\n[bold yellow]Realized P&L (Closed Positions)[/bold yellow]")
+        console.print(f"  Total Invested:     {realized_total_invested:>15,.2f} {final_total_currency}")
+        console.print(f"  Total Proceeds:     {realized_total_proceeds:>15,.2f} {final_total_currency}")
+        console.print(f"  Realized P&L:       [{pnl_color}]{realized_total_pnl:>+15,.2f}[/{pnl_color}] {final_total_currency}")
+        console.print(f"  Return:             [{return_color}]{realized_return:>+15.2f}%[/{return_color}]")
+        
+        if detail and realized_by_asset:
+            console.print("\n[bold]Realized P&L by Asset[/bold]")
+            table = Table(show_header=True, header_style="bold")
+            table.add_column("Asset", style="bold")
+            table.add_column("Account")
+            table.add_column("Invested", justify="right")
+            table.add_column("Proceeds", justify="right")
+            table.add_column("P&L", justify="right")
+            table.add_column("Return %", justify="right")
+            table.add_column("Currency")
+            
+            for key, data in sorted(realized_by_asset.items()):
+                ret = (data['pnl'] / data['invested'] * 100) if data['invested'] > 0 else 0.0
+                
+                pnl_color = get_pnl_color(data['pnl'], data_dir / "config.toml")
+                ret_color = get_pnl_color(ret, data_dir / "config.toml")
+                
+                table.add_row(
+                    data['asset'],
+                    data['account'],
+                    f"{data['invested']:,.2f}",
+                    f"{data['proceeds']:,.2f}",
+                    f"[{pnl_color}]{data['pnl']:+,.2f}[/{pnl_color}]",
+                    f"[{ret_color}]{ret:+.2f}%[/{ret_color}]",
+                    data['currency']
+                )
+            
+            console.print(table)
+            console.print(f"[bold]Subtotal Realized: [{pnl_color}]{realized_total_pnl:+,.2f}[/{pnl_color}] {final_total_currency}[/bold]")
+    
+    # Total summary (if showing both)
+    if show_unrealized and show_realized:
+        console.print("\n" + "━" * 60)
+        total_pnl = unrealized_pnl + realized_total_pnl
+        total_invested = unrealized_total_invested + realized_total_invested
+        total_return = (total_pnl / total_invested * 100) if total_invested > 0 else 0.0
+        
+        pnl_color = get_pnl_color(total_pnl, data_dir / "config.toml")
+        return_color = get_pnl_color(total_return, data_dir / "config.toml")
+        
+        console.print(f"[bold]Total P&L:           [{pnl_color}]{total_pnl:>+15,.2f}[/{pnl_color}] {final_total_currency}[/bold]")
+        console.print(f"[bold]Total Return:        [{return_color}]{total_return:>+15.2f}%[/{return_color}][/bold]")
+    
+    # Additional info
+    if show_unrealized and not show_realized:
+        console.print(f"\n[dim]Active Holdings: {len(holdings)}[/dim]")
+    elif show_realized and not show_unrealized:
+        console.print(f"\n[dim]Total Positions: {len(realized_positions)}[/dim]")
+    else:
+        console.print(f"\n[dim]Active Holdings: {len(holdings)} | Closed Positions: {len(realized_positions)}[/dim]")
+
 
 if __name__ == "__main__":
     app()
