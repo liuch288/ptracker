@@ -20,5 +20,6 @@ class RealizedPosition(BaseModel):
     total_fees: float
     realized_pnl: float
     return_pct: float
+    currency: str
     note: str = ""
     status: Literal["closed"] = "closed"
