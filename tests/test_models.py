@@ -86,10 +86,14 @@ def test_account_model():
         type="brokerage",
         description="My test account",
         currency="USD",
-        created_at=datetime.now()
+        created_at=datetime.now(),
+        total_deposit=0.0,
+        total_withdrawal=0.0
     )
     assert account.name == "mybroker"
     assert account.type == "brokerage"
+    assert account.total_deposit == 0.0
+    assert account.total_withdrawal == 0.0
     print(f"✓ Account created: {account.name} ({account.type})")
 
 

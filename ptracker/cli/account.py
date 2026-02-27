@@ -5,7 +5,7 @@ from datetime import datetime
 import typer
 from rich.console import Console
 from rich.table import Table
-from ptracker.repositories import AccountRepository, HoldingRepository
+from ptracker.repositories import AccountRepository, HoldingRepository, CashFlowRepository
 from ptracker.utils.id_generator import generate_id
 
 console = Console()
@@ -50,7 +50,9 @@ def add_account(
         'type': type,
         'description': description,
         'currency': currency,
-        'created_at': datetime.now().isoformat()
+        'created_at': datetime.now().isoformat(),
+        'total_deposit': 0.0,
+        'total_withdrawal': 0.0
     }
     
     # Save account
@@ -120,6 +122,7 @@ def query_account(
     # Initialize repositories
     account_repo = AccountRepository(data_dir / "accounts.json")
     holding_repo = HoldingRepository(data_dir / "holdings.json")
+    cash_flow_repo = CashFlowRepository(data_dir / "cash_flows.json")
     
     # Find account
     account = account_repo.find_by_name(name)
@@ -135,6 +138,37 @@ def query_account(
     if account.get('description'):
         console.print(f"  Description: {account['description']}")
     console.print(f"  Created: {account.get('created_at', 'N/A')[:10]}")
+    
+    # Display deposit/withdrawal info
+    total_deposit = account.get('total_deposit', 0.0)
+    total_withdrawal = account.get('total_withdrawal', 0.0)
+    net_flow = total_deposit - total_withdrawal
+    console.print(f"\n[bold]Cash Flow:[/bold]")
+    console.print(f"  Total Deposit: {total_deposit:.2f} {account.get('currency', 'USD')}")
+    console.print(f"  Total Withdrawal: {total_withdrawal:.2f} {account.get('currency', 'USD')}")
+    console.print(f"  Net Flow: {net_flow:.2f} {account.get('currency', 'USD')}")
+    
+    # Display cash flow history
+    cash_flows = cash_flow_repo.find_by_account(name)
+    if cash_flows:
+        console.print(f"\n[bold]Cash Flow History ({len(cash_flows)}):[/bold]")
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Date")
+        table.add_column("Type")
+        table.add_column("Amount", justify="right")
+        table.add_column("Currency")
+        table.add_column("Note")
+        
+        for cf in sorted(cash_flows, key=lambda x: x['datetime'], reverse=True):
+            table.add_row(
+                cf['datetime'][:10],
+                cf['type'],
+                f"{cf['amount']:.2f}",
+                cf['currency'],
+                cf.get('note', '')
+            )
+        
+        console.print(table)
     
     # Get holdings for this account
     all_holdings = holding_repo.find_all()
@@ -207,3 +241,99 @@ def delete_account(
     account_repo.delete(account['id'])
     
     console.print(f"[green]✓[/green] Account '{name}' deleted successfully.")
+
+
+@app.command("deposit")
+def deposit(
+    account: str = typer.Argument(..., help="Account name"),
+    amount: float = typer.Argument(..., help="Deposit amount"),
+    currency: str = typer.Option(None, "--currency", "-c", help="Currency (defaults to account currency)"),
+    note: str = typer.Option("", "--note", "-n", help="Note for this deposit")
+):
+    """Record a deposit to an account."""
+    data_dir = get_data_dir()
+    
+    if not data_dir.exists():
+        console.print("[red]Error: ptracker not initialized. Run 'ptracker init' first.[/red]")
+        raise typer.Exit(1)
+    
+    account_repo = AccountRepository(data_dir / "accounts.json")
+    cash_flow_repo = CashFlowRepository(data_dir / "cash_flows.json")
+    
+    # Find account
+    account_data = account_repo.find_by_name(account)
+    if not account_data:
+        console.print(f"[red]Error: Account '{account}' not found.[/red]")
+        raise typer.Exit(1)
+    
+    # Use account currency if not specified
+    if currency is None:
+        currency = account_data.get('currency', 'USD')
+    
+    # Create cash flow record
+    cash_flow_id = generate_id("cf")
+    cash_flow_data = {
+        'id': cash_flow_id,
+        'datetime': datetime.now().isoformat(),
+        'type': 'deposit',
+        'account': account,
+        'amount': amount,
+        'currency': currency,
+        'note': note
+    }
+    cash_flow_repo.insert(cash_flow_data)
+    
+    # Update deposit
+    account_repo.update_deposit(account, amount)
+    
+    console.print(f"[green]✓[/green] Deposited {amount:.2f} {currency} to [bold]{account}[/bold]")
+    if note:
+        console.print(f"  Note: {note}")
+
+
+@app.command("withdraw")
+def withdraw(
+    account: str = typer.Argument(..., help="Account name"),
+    amount: float = typer.Argument(..., help="Withdrawal amount"),
+    currency: str = typer.Option(None, "--currency", "-c", help="Currency (defaults to account currency)"),
+    note: str = typer.Option("", "--note", "-n", help="Note for this withdrawal")
+):
+    """Record a withdrawal from an account."""
+    data_dir = get_data_dir()
+    
+    if not data_dir.exists():
+        console.print("[red]Error: ptracker not initialized. Run 'ptracker init' first.[/red]")
+        raise typer.Exit(1)
+    
+    account_repo = AccountRepository(data_dir / "accounts.json")
+    cash_flow_repo = CashFlowRepository(data_dir / "cash_flows.json")
+    
+    # Find account
+    account_data = account_repo.find_by_name(account)
+    if not account_data:
+        console.print(f"[red]Error: Account '{account}' not found.[/red]")
+        raise typer.Exit(1)
+    
+    # Use account currency if not specified
+    if currency is None:
+        currency = account_data.get('currency', 'USD')
+    
+    # Create cash flow record
+    cash_flow_id = generate_id("cf")
+    cash_flow_data = {
+        'id': cash_flow_id,
+        'datetime': datetime.now().isoformat(),
+        'type': 'withdrawal',
+        'account': account,
+        'amount': amount,
+        'currency': currency,
+        'note': note
+    }
+    cash_flow_repo.insert(cash_flow_data)
+    
+    # Update withdrawal
+    account_repo.update_withdrawal(account, amount)
+    
+    console.print(f"[green]✓[/green] Withdrew {amount:.2f} {currency} from [bold]{account}[/bold]")
+    if note:
+        console.print(f"  Note: {note}")
