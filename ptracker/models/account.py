@@ -13,3 +13,5 @@ class Account(BaseModel):
     description: str = ""
     currency: str = "USD"
     created_at: datetime
+    total_deposit: float = 0.0
+    total_withdrawal: float = 0.0

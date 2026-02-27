@@ -119,7 +119,9 @@ def test_account_repository():
             'type': 'brokerage',
             'description': 'Test account',
             'currency': 'USD',
-            'created_at': datetime.now().isoformat()
+            'created_at': datetime.now().isoformat(),
+            'total_deposit': 0.0,
+            'total_withdrawal': 0.0
         }
         acct_id = repo.insert(account_data)
         print(f"✓ Inserted account: {acct_id}")
@@ -129,6 +131,18 @@ def test_account_repository():
         assert found is not None
         assert found['type'] == 'brokerage'
         print(f"✓ Found account by name: {found['name']}")
+        
+        # Test deposit
+        repo.update_deposit('mybroker', 1000.0)
+        found = repo.find_by_name('mybroker')
+        assert found['total_deposit'] == 1000.0
+        print(f"✓ Updated deposit: {found['total_deposit']}")
+        
+        # Test withdrawal
+        repo.update_withdrawal('mybroker', 500.0)
+        found = repo.find_by_name('mybroker')
+        assert found['total_withdrawal'] == 500.0
+        print(f"✓ Updated withdrawal: {found['total_withdrawal']}")
 
 
 def test_realized_repository():
