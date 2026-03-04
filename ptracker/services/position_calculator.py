@@ -1,11 +1,41 @@
 """Position calculator service."""
 
+import re
 from typing import List, Optional, Dict, Any
 from enum import Enum
 from datetime import datetime, date
 from ptracker.repositories import TransactionRepository, HoldingRepository, RealizedRepository
 from ptracker.models import Transaction, Holding
 from ptracker.utils.id_generator import generate_id
+
+# US Option pattern: AAPL250117C00150000
+US_OPTION_PATTERN = re.compile(r'^[A-Z]{1,4}\d{6}[CP]\d{8}$')
+
+# Option contract multiplier
+OPTION_CONTRACT_MULTIPLIER = 100
+
+
+def is_option(asset: str) -> bool:
+    """Check if asset is a US option based on Yahoo Finance format."""
+    return bool(US_OPTION_PATTERN.match(asset))
+
+
+def get_multiplier(asset: str, quantity: float) -> float:
+    """Get multiplier for asset. Returns 100 for options if quantity <= 10.
+    
+    Args:
+        asset: Asset code
+        quantity: Transaction quantity
+        
+    Returns:
+        100.0 for options (if quantity suggests not yet multiplied), 1.0 otherwise
+    """
+    if is_option(asset):
+        # If quantity > 10, assume already multiplied in old data
+        if quantity > 10:
+            return 1.0
+        return OPTION_CONTRACT_MULTIPLIER
+    return 1.0
 
 
 class ClosureType(Enum):
@@ -69,16 +99,19 @@ class PositionCalculator:
         tx_date = transaction['datetime'][:10]
         note = transaction['note']
         
+        # Get multiplier for options (100x for option contracts)
+        multiplier = get_multiplier(asset, abs(quantity))
+        
         # No existing holding - create new one
         if not existing_holding or existing_holding['quantity'] == 0:
             if action == 'open':
                 # New position
                 qty = abs(quantity)
                 if direction == 'long':
-                    total_invested = (qty * price) + fee
+                    total_invested = (qty * price * multiplier) + fee
                     avg_cost = total_invested / qty
                 else:  # short
-                    total_invested = (qty * price) - fee
+                    total_invested = (qty * price * multiplier) - fee
                     avg_cost = total_invested / qty
                 
                 holding_data = {
@@ -109,9 +142,9 @@ class PositionCalculator:
             # Add to position
             add_qty = abs(quantity)
             if direction == 'long':
-                add_cost = (add_qty * price) + fee
+                add_cost = (add_qty * price * multiplier) + fee
             else:  # short
-                add_cost = (add_qty * price) - fee
+                add_cost = (add_qty * price * multiplier) - fee
             
             new_quantity = old_quantity + add_qty
             new_total_invested = old_total_invested + add_cost
@@ -136,13 +169,13 @@ class PositionCalculator:
             # Detect closure type
             closure_type = self.detect_closure(old_quantity, new_quantity)
             
-            # Calculate proceeds from closing
+            # Calculate proceeds from closing (apply multiplier for options)
             if direction == 'long':
-                close_proceeds = (close_qty * price) - fee
+                close_proceeds = (close_qty * price * multiplier) - fee
                 close_cost = close_qty * old_avg_cost
                 realized_pnl = close_proceeds - close_cost
             else:  # short
-                close_cost = (close_qty * price) + fee
+                close_cost = (close_qty * price * multiplier) + fee
                 close_proceeds = close_qty * old_avg_cost
                 realized_pnl = close_proceeds - close_cost
             

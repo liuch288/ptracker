@@ -1,6 +1,36 @@
 """P&L calculator service."""
 
+import re
 from typing import Dict, Any
+
+# US Option pattern: AAPL250117C00150000
+US_OPTION_PATTERN = re.compile(r'^[A-Z]{1,4}\d{6}[CP]\d{8}$')
+
+# Option contract multiplier
+OPTION_CONTRACT_MULTIPLIER = 100
+
+
+def is_option(asset: str) -> bool:
+    """Check if asset is a US option based on Yahoo Finance format."""
+    return bool(US_OPTION_PATTERN.match(asset))
+
+
+def get_multiplier(asset: str, quantity: float) -> float:
+    """Get multiplier for asset. Returns 100 for options if quantity <= 10.
+    
+    Args:
+        asset: Asset code
+        quantity: Holding quantity
+        
+    Returns:
+        100.0 for options (if quantity suggests not yet multiplied), 1.0 otherwise
+    """
+    if is_option(asset):
+        # If quantity > 10, assume already multiplied in old data
+        if quantity > 10:
+            return 1.0
+        return OPTION_CONTRACT_MULTIPLIER
+    return 1.0
 
 
 class PnLCalculator:
@@ -58,16 +88,31 @@ class PnLCalculator:
         direction = holding['direction']
         quantity = holding['quantity']
         total_invested = holding['total_invested']
+        asset = holding.get('asset', '')
         
-        if direction == "long":
-            # Long: (current_price * quantity) - total_invested
-            current_value = current_price * quantity
-            return current_value - total_invested
+        # Get multiplier for options (100x for option contracts)
+        multiplier = get_multiplier(asset, quantity)
+        
+        # For options, total_invested is stored as raw (price per share * quantity)
+        # We need to apply multiplier to both invested and current value
+        if multiplier > 1.0:
+            # This is an option - apply multiplier
+            invested = total_invested * multiplier
+            if direction == "long":
+                current_value = current_price * quantity * multiplier
+                return current_value - invested
+            else:
+                # Short
+                current_cost = current_price * abs(quantity) * multiplier
+                return invested - current_cost
         else:
-            # Short: total_proceeds - (current_price * abs(quantity))
-            # For short, total_invested is actually the proceeds
-            current_cost = current_price * abs(quantity)
-            return total_invested - current_cost
+            # Regular stock
+            if direction == "long":
+                current_value = current_price * quantity
+                return current_value - total_invested
+            else:
+                current_cost = current_price * abs(quantity)
+                return total_invested - current_cost
     
     def calculate_return_pct(
         self,
