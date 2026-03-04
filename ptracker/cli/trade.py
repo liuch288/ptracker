@@ -16,6 +16,71 @@ from ptracker.utils.color_helper import get_pnl_color
 console = Console()
 app = typer.Typer(help="Manage trades and transactions")
 
+# Yahoo Finance code format patterns
+ASSET_CODE_PATTERNS = {
+    'US': (r'^[A-Z]{1,5}$', 'AAPL, MSFT, TSLA (no suffix)'),
+    'HK': (r'^[0-9]{1,4}\.HK$', '700.HK, 9988.HK, 0388.HK (1-4 digits + .HK)'),
+    'SS': (r'^[6][0-9]{5}\.SS$', '600519.SS, 688001.SS (6xxxxx + .SS)'),
+    'SZ': (r'^[0-3][0-9]{5}\.SZ$', '000001.SZ, 300001.SZ (0xxxxx-3xxxxx + .SZ)'),
+    'JP': (r'^\d{4}\.T$', '7203.T, 9984.T (4 digits + .T)'),
+    'UK': (r'^[A-Z]+\.L$', 'HSBA.L, BP.L (code + .L)'),
+    'DE': (r'^[A-Z]+\.DE$', 'BMW.DE, SAP.DE (code + .DE)'),
+    'AX': (r'^[A-Z]+\.AX$', 'BHP.AX, CBA.AX (code + .AX)'),
+    'TO': (r'^[A-Z]+\.TO$', 'RY.TO, TD.TO (code + .TO)'),
+    'NS': (r'^[A-Z]+\.NS$', 'RELIANCE.NS, TCS.NS (code + .NS)'),
+    'INDEX': (r'^\^[A-Z]+$', '^HSI, ^SSEC, ^N225 (^ + letters)'),
+}
+
+
+def validate_asset_code(asset: str) -> tuple[bool, str]:
+    """Validate asset code against Yahoo Finance format.
+    
+    Args:
+        asset: Asset code to validate
+        
+    Returns:
+        (is_valid, error_message)
+    """
+    # Check for common issues first
+    if not asset:
+        return False, "Asset code cannot be empty"
+    
+    # Check if it's an index (starts with ^)
+    if asset.startswith('^'):
+        if ASSET_CODE_PATTERNS['INDEX'][0]:
+            import re
+            if re.match(ASSET_CODE_PATTERNS['INDEX'][0], asset):
+                return True, ""
+        return False, f"Invalid index format '{asset}'. Use format like: ^HSI, ^SSEC, ^N225"
+    
+    # Check by suffix
+    suffixes = ['.HK', '.SS', '.SZ', '.T', '.L', '.DE', '.AX', '.TO', '.NS']
+    
+    for suffix in suffixes:
+        if asset.endswith(suffix):
+            suffix_key = suffix[1:]  # Remove dot
+            # Special handling for .T (Japan)
+            if suffix == '.T':
+                suffix_key = 'JP'
+            # Special handling for .L (UK)
+            if suffix == '.L':
+                suffix_key = 'UK'
+            
+            pattern, example = ASSET_CODE_PATTERNS.get(suffix_key, ('', ''))
+            if pattern:
+                import re
+                if not re.match(pattern, asset):
+                    return False, f"Invalid {suffix_key} stock format '{asset}'. Example: {example}"
+            return True, ""
+    
+    # No suffix - assume US stock
+    # Must be 1-5 uppercase letters
+    import re
+    if not re.match(r'^[A-Z]{1,5}$', asset):
+        return False, f"Invalid US stock format '{asset}'. Example: AAPL, MSFT, TSLA (1-5 uppercase letters)"
+    
+    return True, ""
+
 
 def get_data_dir() -> Path:
     """Get ptracker data directory."""
@@ -49,6 +114,24 @@ def add_trade(
         raise typer.Exit(1)
 
     trade_type = trade_type.lower()
+
+    # Validate asset code format
+    is_valid, error_msg = validate_asset_code(asset)
+    if not is_valid:
+        console.print(f"[red]Error: {error_msg}[/red]")
+        console.print("[dim]Valid Yahoo Finance formats:[/dim]")
+        console.print("  US stocks: AAPL, MSFT (no suffix)")
+        console.print("  HK stocks: 700.HK, 9988.HK (4 digits + .HK)")
+        console.print("  Shanghai: 600519.SS (6 digits + .SS)")
+        console.print("  Shenzhen: 000001.SZ (6 digits + .SZ)")
+        console.print("  Japan: 7203.T (4 digits + .T)")
+        console.print("  UK: HSBA.L (code + .L)")
+        console.print("  Germany: BMW.DE (code + .DE)")
+        console.print("  Australia: BHP.AX (code + .AX)")
+        console.print("  Canada: RY.TO (code + .TO)")
+        console.print("  India: RELIANCE.NS (code + .NS)")
+        console.print("  Index: ^HSI, ^SSEC (^ + letters)")
+        raise typer.Exit(1)
 
     # Handle dividend type - amount is the dividend, no price needed
     if trade_type == 'dividend':

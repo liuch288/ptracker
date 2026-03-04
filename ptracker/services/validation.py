@@ -90,9 +90,9 @@ class ValidationService:
         if not asset or len(asset) < 1:
             return False
         
-        # Basic validation: alphanumeric, dots, hyphens, equals
-        # Examples: AAPL, 0700.HK, BTC-USD, 600000.SS, HKDUSD=X
-        pattern = r'^[A-Z0-9][A-Z0-9\.\-=]*$'
+        # Basic validation: alphanumeric, dots, hyphens, equals, caret for indices
+        # Examples: AAPL, 0700.HK, BTC-USD, 600000.SS, HKDUSD=X, ^HSI
+        pattern = r'^[\^A-Z0-9][A-Z0-9\.\-=]*$'
         return bool(re.match(pattern, asset, re.IGNORECASE))
     
     def validate_quantity_sign(
