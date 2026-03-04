@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.table import Table
 from ptracker.repositories import HoldingRepository, RealizedRepository
 from ptracker.services.price_service import PriceService
-from ptracker.services.pnl_calculator import PnLCalculator
+from ptracker.services.pnl_calculator import PnLCalculator, get_multiplier
 from ptracker.utils.color_helper import get_pnl_color
 from ptracker.config import ConfigManager
 
@@ -109,16 +109,19 @@ def query_holdings(
             avg_cost = holding['avg_cost']
             curr = holding['currency']
             
+            # Get multiplier for options
+            multiplier = get_multiplier(holding['asset'], holding['quantity'])
+            
             # For detail display
             display_invested = invested
-            display_avg_cost = avg_cost
+            display_avg_cost = avg_cost / multiplier  # Show per-share price for options
             display_curr = curr
             
             # Convert detail if needed (not 'mix')
             if final_detail_currency != 'mix' and curr != final_detail_currency:
                 rate = price_service.get_exchange_rate(curr, final_detail_currency)
                 display_invested = invested * rate
-                display_avg_cost = avg_cost * rate
+                display_avg_cost = display_avg_cost * rate
                 display_curr = final_detail_currency
             
             # Convert for total calculation
@@ -197,9 +200,12 @@ def query_value(
         
         current_price = quote.price
         
+        # Get multiplier for options (100x for option contracts)
+        multiplier = get_multiplier(holding['asset'], holding['quantity'])
+        
         # Calculate values
         invested = holding['total_invested']
-        current_value = abs(holding['quantity']) * current_price
+        current_value = abs(holding['quantity']) * current_price * multiplier
         
         # Convert currency if needed
         if target_curr and holding['currency'] != target_curr:
@@ -497,9 +503,12 @@ def query_pnl(
             
             current_price = quote.price
             
+            # Get multiplier for options (100x for option contracts)
+            multiplier = get_multiplier(holding['asset'], holding['quantity'])
+            
             # Calculate values
             invested = holding['total_invested']
-            current_value = abs(holding['quantity']) * current_price
+            current_value = abs(holding['quantity']) * current_price * multiplier
             curr = holding['currency']
             
             # For detail display
