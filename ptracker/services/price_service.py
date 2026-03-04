@@ -28,29 +28,44 @@ class PriceService:
         self._price_cache: Dict[str, tuple[PriceQuote, datetime]] = {}
         self._exchange_rate_cache: Dict[str, tuple[float, datetime]] = {}
     
-    def get_price(self, asset: str) -> Optional[PriceQuote]:
-        """Get current price for asset.
+    def _convert_to_yahoo_format(self, asset: str) -> str:
+        """Convert asset code to Yahoo Finance format.
         
-        Priority:
-        1. Check cache
-        2. Try yfinance
-        3. Fallback to akshare
+        Yahoo Finance has specific requirements:
+        - HK stocks: use 4-digit code (0700.HK not 00700.HK)
         
         Args:
-            asset: Asset code (Yahoo Finance format)
+            asset: Original asset code
+            
+        Returns:
+            Asset code in Yahoo Finance format
+        """
+        # Handle HK stocks: remove leading zeros but keep 4 digits
+        if asset.endswith('.HK'):
+            code = asset[:-3]  # Remove .HK
+            # Remove leading zeros but ensure at least 4 digits
+            code = code.lstrip('0')
+            if not code:
+                # All zeros like 00700 -> use 4 zeros
+                code = '0000'
+            elif len(code) < 4:
+                # Pad to 4 digits (e.g., 700 -> 0700)
+                code = code.zfill(4)
+            return code + '.HK'
+        return asset
+    
+    def _fetch_yahoo_price(self, yahoo_asset: str, original_asset: str) -> Optional[PriceQuote]:
+        """Fetch price from Yahoo Finance.
+        
+        Args:
+            yahoo_asset: Asset code in Yahoo format
+            original_asset: Original asset code (for caching)
             
         Returns:
             PriceQuote or None if not found
         """
-        # Check cache
-        if asset in self._price_cache:
-            quote, cached_at = self._price_cache[asset]
-            if datetime.now() - cached_at < timedelta(seconds=self.cache_seconds):
-                return quote
-        
-        # Try yfinance
         try:
-            ticker = yf.Ticker(asset)
+            ticker = yf.Ticker(yahoo_asset)
             info = ticker.info
             
             if 'currentPrice' in info:
@@ -60,23 +75,59 @@ class PriceService:
             elif 'previousClose' in info:
                 price = info['previousClose']
             else:
-                price = None
+                return None
             
             if price:
                 currency = info.get('currency', 'USD')
                 quote = PriceQuote(
-                    asset=asset,
+                    asset=original_asset,
                     price=float(price),
                     currency=currency,
                     timestamp=datetime.now()
                 )
                 
-                # Cache the result
-                self._price_cache[asset] = (quote, datetime.now())
+                # Cache the result (use original asset as key)
+                self._price_cache[original_asset] = (quote, datetime.now())
                 return quote
         
         except Exception:
             pass
+        
+        return None
+    
+    def get_price(self, asset: str) -> Optional[PriceQuote]:
+        """Get current price for asset.
+        
+        Priority:
+        1. Check cache
+        2. Try yfinance (with format conversion for HK stocks)
+        3. Fallback to akshare
+        
+        Args:
+            asset: Asset code (original format)
+            
+        Returns:
+            PriceQuote or None if not found
+        """
+        # Check cache (use original asset for cache key)
+        if asset in self._price_cache:
+            quote, cached_at = self._price_cache[asset]
+            if datetime.now() - cached_at < timedelta(seconds=self.cache_seconds):
+                return quote
+        
+        # Convert to Yahoo format for query
+        yahoo_asset = self._convert_to_yahoo_format(asset)
+        
+        # Try yfinance with converted format
+        quote = self._fetch_yahoo_price(yahoo_asset, asset)
+        if quote:
+            return quote
+        
+        # Fallback: try original format if different
+        if yahoo_asset != asset:
+            quote = self._fetch_yahoo_price(asset, asset)
+            if quote:
+                return quote
         
         # Try akshare fallback
         try:
