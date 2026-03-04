@@ -140,7 +140,12 @@ ptracker account query <账户名>
 
 # 删除账户（需确认，且账户无持仓）
 ptracker account delete <账户名>
-```
+
+# 入金（记录存款）
+ptracker account deposit <账户名> <金额> --currency <货币>
+
+# 出金（记录取款）
+ptracker account withdraw <账户名> <金额> --currency <货币>
 
 
 **参数说明**:

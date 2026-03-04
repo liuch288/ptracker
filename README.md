@@ -163,14 +163,32 @@ ptracker query value --currency USD
 ptracker trade add sell AAPL 100 160.0 --currency USD --action close --direction long --account ibkr --note "止盈"
 ```
 
+7. 入金和出金：
+```bash
+# 入金（存款）
+ptracker account deposit ibkr 10000 --currency USD --note "从银行转账"
+ptracker account deposit futu 50000 --currency HKD --note "续资"
+
+# 出金（取款）
+ptracker account withdraw ibkr 5000 --currency USD --note "转出到银行"
+ptracker account withdraw futu 20000 --currency HKD
+```
+
+查看账户信息（含入金出金记录）：
+```bash
+ptracker account query ibkr
+ptracker account list
+```
+
 ## 命令概览
 
 ```bash
-ptracker init                    # 初始化数据目录（可选 --color-scheme）
-ptracker config show/set/color   # 配置管理
-ptracker account add/list/query  # 账户管理
-ptracker trade add/list          # 交易记录
-ptracker query holdings/value    # 查询持仓和价值
+ptracker init                         # 初始化数据目录（可选 --color-scheme）
+ptracker config show/set/color        # 配置管理
+ptracker account add/list/query       # 账户管理
+ptracker account deposit/withdraw     # 入金/出金
+ptracker trade add/list               # 交易记录
+ptracker query holdings/value/pnl     # 查询持仓、价值、P&L
 ```
 
 ## License
