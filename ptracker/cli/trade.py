@@ -19,6 +19,7 @@ app = typer.Typer(help="Manage trades and transactions")
 # Yahoo Finance code format patterns
 ASSET_CODE_PATTERNS = {
     'US': (r'^[A-Z]{1,5}$', 'AAPL, MSFT, TSLA (no suffix)'),
+    'US_OPTION': (r'^[A-Z]{1,4}\d{6}[CP]\d{8}$', 'AAPL250117C00150000 (symbol + YYMMDD + C/P + strike*1000)'),
     'HK': (r'^[0-9]{1,4}\.HK$', '700.HK, 9988.HK, 0388.HK (1-4 digits + .HK)'),
     'SS': (r'^[6][0-9]{5}\.SS$', '600519.SS, 688001.SS (6xxxxx + .SS)'),
     'SZ': (r'^[0-3][0-9]{5}\.SZ$', '000001.SZ, 300001.SZ (0xxxxx-3xxxxx + .SZ)'),
@@ -53,6 +54,11 @@ def validate_asset_code(asset: str) -> tuple[bool, str]:
                 return True, ""
         return False, f"Invalid index format '{asset}'. Use format like: ^HSI, ^SSEC, ^N225"
     
+    # Check if it's a US option (no suffix, but has pattern like AAPL250117C00150000)
+    import re
+    if re.match(ASSET_CODE_PATTERNS['US_OPTION'][0], asset):
+        return True, ""
+    
     # Check by suffix
     suffixes = ['.HK', '.SS', '.SZ', '.T', '.L', '.DE', '.AX', '.TO', '.NS']
     
@@ -73,11 +79,14 @@ def validate_asset_code(asset: str) -> tuple[bool, str]:
                     return False, f"Invalid {suffix_key} stock format '{asset}'. Example: {example}"
             return True, ""
     
-    # No suffix - assume US stock
-    # Must be 1-5 uppercase letters
+    # No suffix - check if it's a US option or US stock
     import re
+    # First check US option pattern
+    if re.match(ASSET_CODE_PATTERNS['US_OPTION'][0], asset):
+        return True, ""
+    # Then check US stock pattern
     if not re.match(r'^[A-Z]{1,5}$', asset):
-        return False, f"Invalid US stock format '{asset}'. Example: AAPL, MSFT, TSLA (1-5 uppercase letters)"
+        return False, f"Invalid US stock format '{asset}'. Example: AAPL, MSFT (1-5 letters) or AAPL250117C00150000 (option)"
     
     return True, ""
 
@@ -121,6 +130,7 @@ def add_trade(
         console.print(f"[red]Error: {error_msg}[/red]")
         console.print("[dim]Valid Yahoo Finance formats:[/dim]")
         console.print("  US stocks: AAPL, MSFT (no suffix)")
+        console.print("  US options: AAPL250117C00150000 (symbol + YYMMDD + C/P + strike*1000)")
         console.print("  HK stocks: 700.HK, 9988.HK (4 digits + .HK)")
         console.print("  Shanghai: 600519.SS (6 digits + .SS)")
         console.print("  Shenzhen: 000001.SZ (6 digits + .SZ)")
