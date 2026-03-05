@@ -90,8 +90,8 @@ class PriceService:
                 self._price_cache[original_asset] = (quote, datetime.now())
                 return quote
         
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error fetching Yahoo price for {original_asset}: {e}")
         
         return None
     
@@ -167,8 +167,8 @@ class PriceService:
                     self._price_cache[asset] = (quote, datetime.now())
                     return quote
         
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error fetching akshare price for {asset}: {e}")
         
         # Both failed
         return None
@@ -204,8 +204,8 @@ class PriceService:
                 self._exchange_rate_cache[cache_key] = (rate, datetime.now())
                 return rate
         
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error fetching exchange rate {from_currency}->{to_currency}: {e}")
         
         # Fallback: return 1.0 (no conversion)
         return 1.0

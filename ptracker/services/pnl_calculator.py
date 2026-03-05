@@ -93,18 +93,17 @@ class PnLCalculator:
         # Get multiplier for options (100x for option contracts)
         multiplier = get_multiplier(asset, quantity)
         
-        # For options, total_invested is stored as raw (price per share * quantity)
-        # We need to apply multiplier to both invested and current value
+        # For options, total_invested is already stored with multiplier applied
+        # (see position_calculator.py). Only current_value needs multiplier.
         if multiplier > 1.0:
-            # This is an option - apply multiplier
-            invested = total_invested * multiplier
+            # This is an option - only apply multiplier to current value
             if direction == "long":
                 current_value = current_price * quantity * multiplier
-                return current_value - invested
+                return current_value - total_invested
             else:
                 # Short
                 current_cost = current_price * abs(quantity) * multiplier
-                return invested - current_cost
+                return total_invested - current_cost
         else:
             # Regular stock
             if direction == "long":

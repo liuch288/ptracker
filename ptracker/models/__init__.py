@@ -5,6 +5,7 @@ from ptracker.models.holding import Holding
 from ptracker.models.realized_position import RealizedPosition
 from ptracker.models.account import Account
 from ptracker.models.price_quote import PriceQuote
+from ptracker.models.snapshot import PortfolioSnapshot, AccountSnapshot, HoldingSnapshot
 
 __all__ = [
     "Transaction",
@@ -12,4 +13,7 @@ __all__ = [
     "RealizedPosition",
     "Account",
     "PriceQuote",
+    "PortfolioSnapshot",
+    "AccountSnapshot",
+    "HoldingSnapshot",
 ]
