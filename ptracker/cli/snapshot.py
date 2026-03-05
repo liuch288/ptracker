@@ -6,7 +6,6 @@ from typing import Optional
 import typer
 from rich.console import Console
 from rich.table import Table
-from rich import print as rprint
 from ptracker.repositories import HoldingRepository, AccountRepository, RealizedRepository
 from ptracker.repositories.snapshot import SnapshotRepository
 from ptracker.services.price_service import PriceService
@@ -84,10 +83,20 @@ def capture_snapshot() -> PortfolioSnapshot:
         # Get holdings for this account
         account_holdings = [h for h in holdings if h['account'] == account_name]
         
-        # Calculate account totals
+        # Calculate account totals (convert to base currency)
         total_deposit = account.get('total_deposit', 0.0)
         total_withdrawal = account.get('total_withdrawal', 0.0)
-        net_deposit = total_deposit - total_withdrawal
+        
+        # Convert to base currency if needed
+        if account_currency != base_currency:
+            rate = currency_rates.get(account_currency, 1.0)
+            total_deposit_base = total_deposit * rate
+            total_withdrawal_base = total_withdrawal * rate
+        else:
+            total_deposit_base = total_deposit
+            total_withdrawal_base = total_withdrawal
+        
+        net_deposit = total_deposit_base - total_withdrawal_base
         
         # Process holdings and calculate values
         holding_snapshots = []
@@ -104,8 +113,11 @@ def capture_snapshot() -> PortfolioSnapshot:
             holding_currency = holding.get('currency', account_currency)
             
             # Get current price
-            price_quote = price_service.get_price(asset)
-            current_price = price_quote.price if price_quote else avg_cost
+            try:
+                price_quote = price_service.get_price(asset)
+                current_price = price_quote.price if price_quote else avg_cost
+            except Exception:
+                current_price = avg_cost
             
             # Calculate market value and unrealized P&L
             market_value = current_price * quantity
@@ -183,12 +195,14 @@ def capture_snapshot() -> PortfolioSnapshot:
     )
     
     # Calculate total return percentage
-    if portfolio_total_cost > 0:
-        total_return_pct = (
-            (portfolio_total_unrealized_pnl + total_realized_pnl) 
-            / portfolio_total_cost * 100.0
-        )
-    else:
+    # Use max to avoid division by zero
+    divisor = max(portfolio_total_cost, 1e-10)
+    total_return_pct = (
+        (portfolio_total_unrealized_pnl + total_realized_pnl) 
+        / divisor * 100.0
+    )
+    # Set to 0.0 if cost is actually zero or negative
+    if portfolio_total_cost <= 0:
         total_return_pct = 0.0
     
     # Get price timestamp
