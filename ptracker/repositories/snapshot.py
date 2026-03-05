@@ -79,14 +79,8 @@ class SnapshotRepository(BaseRepository):
         snapshot_id = snapshot['snapshot_time']
         snapshot['id'] = snapshot_id
         
-        # Check if snapshot for this time already exists
-        existing = self.find_by_date(snapshot['snapshot_time'][:10])
-        if existing:
-            # Update existing
-            self.update(snapshot_id, snapshot)
-        else:
-            # Insert new
-            self.insert(snapshot)
+        # Always insert a new snapshot (use snapshot_time as unique ID)
+        self.insert(snapshot)
         
         return snapshot_id
     
