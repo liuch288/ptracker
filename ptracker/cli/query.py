@@ -17,13 +17,16 @@ app = typer.Typer(help="Query holdings and portfolio information")
 # ID truncation limit (approximately 12 characters)
 ID_TRUNCATE_LENGTH = 12
 
+# Note truncation limit
+NOTE_TRUNCATE_LENGTH = 20
+
 
 def format_id(id_value: Optional[str], full: bool = False) -> str:
     """Format ID for display, optionally truncated.
     
     Args:
         id_value: The ID to format
-        full: If True, show full ID; if False, truncate to ~12 chars
+        full: If True, show full ID; if False, return empty string (ID hidden by default)
         
     Returns:
         Formatted ID string
@@ -32,7 +35,25 @@ def format_id(id_value: Optional[str], full: bool = False) -> str:
         return ""
     if full:
         return id_value
-    return id_value[:ID_TRUNCATE_LENGTH] + "..." if len(id_value) > ID_TRUNCATE_LENGTH else id_value
+    # ID hidden by default, only show when full=True
+    return ""
+
+
+def format_note(note: Optional[str], full: bool = False) -> str:
+    """Format note for display, optionally truncated.
+    
+    Args:
+        note: The note to format
+        full: If True, show full note; if False, truncate to ~20 chars
+        
+    Returns:
+        Formatted note string
+    """
+    if not note:
+        return ""
+    if full:
+        return note
+    return note[:NOTE_TRUNCATE_LENGTH] + "..." if len(note) > NOTE_TRUNCATE_LENGTH else note
 
 
 def get_data_dir() -> Path:
@@ -48,7 +69,8 @@ def query_holdings(
     currency: Optional[str] = typer.Option(None, "--currency", "-c", help="Convert all values to currency"),
     detail_currency: Optional[str] = typer.Option(None, "--detail-currency", "-d", help="Currency for detail display (or 'mix' for original)"),
     total_currency: Optional[str] = typer.Option(None, "--total-currency", "-t", help="Currency for total calculation"),
-    fullid: bool = typer.Option(False, "--fullid", help="Show full ID instead of truncated"),
+    fullid: bool = typer.Option(False, "--fullid", help="Show full ID"),
+    fullnote: bool = typer.Option(False, "--fullnote", help="Show full note instead of truncated"),
 ):
     """Query current holdings."""
     data_dir = get_data_dir()
@@ -113,7 +135,8 @@ def query_holdings(
     # Create table for active holdings
     if holdings:
         table = Table(title="Active Holdings", show_header=True, header_style="bold cyan")
-        table.add_column("ID", style="dim")
+        if fullid:
+            table.add_column("ID", style="dim")
         table.add_column("Asset", style="bold")
         table.add_column("Account")
         table.add_column("Dir")
@@ -123,6 +146,7 @@ def query_holdings(
         table.add_column("Currency")
         table.add_column("First Open", style="dim")
         table.add_column("Last Updated", style="dim")
+        table.add_column("Note", style="dim")
         
         total_invested = 0.0
         
@@ -153,8 +177,10 @@ def query_holdings(
             
             total_invested += invested
             
-            table.add_row(
-                format_id(holding.get('id'), fullid),
+            row = []
+            if fullid:
+                row.append(format_id(holding.get('id'), fullid))
+            row.extend([
                 holding['asset'],
                 holding['account'],
                 holding['direction'][:1].upper(),
@@ -163,8 +189,11 @@ def query_holdings(
                 f"{display_invested:.2f}",
                 display_curr,
                 holding['first_open_date'],
-                holding['last_updated']
-            )
+                holding['last_updated'],
+            ])
+            row.append(format_note(holding.get('note'), fullnote))
+            
+            table.add_row(*row)
         
         console.print(table)
         console.print(f"\n[bold]Total Invested: {total_invested:.2f} {final_total_currency}[/bold]")
@@ -306,7 +335,8 @@ def query_realized(
     total_currency: Optional[str] = typer.Option(None, "--total-currency", "-t", help="Currency for total calculation"),
     sort_by: Optional[str] = typer.Option("date", "--sort", "-s", help="Sort by: date, pnl, return, days (default: date)"),
     limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Limit number of results"),
-    fullid: bool = typer.Option(False, "--fullid", help="Show full ID instead of truncated"),
+    fullid: bool = typer.Option(False, "--fullid", help="Show full ID"),
+    fullnote: bool = typer.Option(False, "--fullnote", help="Show full note instead of truncated"),
 ):
     """Query realized (closed) positions."""
     data_dir = get_data_dir()
@@ -379,7 +409,8 @@ def query_realized(
 
     # Create table
     table = Table(title="Realized Positions", show_header=True, header_style="bold cyan")
-    table.add_column("ID", style="dim")
+    if fullid:
+        table.add_column("ID", style="dim")
     table.add_column("Asset", style="bold")
     table.add_column("Account")
     table.add_column("Dir")
@@ -392,6 +423,7 @@ def query_realized(
     table.add_column("Days", justify="right")
     table.add_column("Opened", style="dim")
     table.add_column("Closed", style="dim")
+    table.add_column("Note", style="dim")
 
     total_pnl = 0.0
 
@@ -425,8 +457,10 @@ def query_realized(
 
         total_pnl += pnl
 
-        table.add_row(
-            format_id(realized.get('id'), fullid),
+        row = []
+        if fullid:
+            row.append(format_id(realized.get('id'), fullid))
+        row.extend([
             realized['asset'],
             realized['account'],
             realized['direction'][:1].upper(),
@@ -438,8 +472,11 @@ def query_realized(
             display_curr,
             str(realized['holding_days']),
             realized['first_open_date'],
-            realized['last_close_date']
-        )
+            realized['last_close_date'],
+        ])
+        row.append(format_note(realized.get('note'), fullnote))
+        
+        table.add_row(*row)
 
     console.print(table)
 
@@ -749,7 +786,8 @@ def query_trades(
     sort_by: Optional[str] = typer.Option("date", "--sort", help="Sort by: date, asset (default: date)"),
     limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Limit results"),
     output: Optional[str] = typer.Option("table", "--output", "-o", help="Output format: table, json"),
-    fullid: bool = typer.Option(False, "--fullid", help="Show full ID instead of truncated"),
+    fullid: bool = typer.Option(False, "--fullid", help="Show full ID"),
+    fullnote: bool = typer.Option(False, "--fullnote", help="Show full note instead of truncated"),
 ):
     """Query trade transactions."""
     data_dir = get_data_dir()
@@ -807,7 +845,8 @@ def query_trades(
 
     # Create table
     table = Table(title="Transactions", show_header=True, header_style="bold cyan")
-    table.add_column("ID", style="dim")
+    if fullid:
+        table.add_column("ID", style="dim")
     table.add_column("Date", style="dim")
     table.add_column("Type")
     table.add_column("Action")
@@ -828,8 +867,10 @@ def query_trades(
             type_color = "green" if tx['type'] == 'buy' else "red"
             qty_display = f"{abs(tx['quantity']):.2f}"
 
-        table.add_row(
-            format_id(tx.get('id'), fullid),
+        row = []
+        if fullid:
+            row.append(format_id(tx.get('id'), fullid))
+        row.extend([
             tx['datetime'][:10],
             f"[{type_color}]{tx['type'].upper()}[/{type_color}]",
             tx['action'],
@@ -840,8 +881,10 @@ def query_trades(
             tx['currency'],
             f"{tx.get('fee', 0):.2f}",
             tx['account'],
-            tx.get('note', '')
-        )
+        ])
+        row.append(format_note(tx.get('note'), fullnote))
+        
+        table.add_row(*row)
 
     console.print(table)
     console.print(f"\n[dim]Total: {len(transactions)} transaction(s)[/dim]")
