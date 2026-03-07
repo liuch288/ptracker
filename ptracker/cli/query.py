@@ -1,11 +1,11 @@
 """Query commands for holdings and portfolio."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Literal
 import typer
 from rich.console import Console
 from rich.table import Table
-from ptracker.repositories import HoldingRepository, RealizedRepository
+from ptracker.repositories import HoldingRepository, RealizedRepository, TransactionRepository
 from ptracker.services.price_service import PriceService
 from ptracker.services.pnl_calculator import PnLCalculator, get_multiplier
 from ptracker.utils.color_helper import get_pnl_color
@@ -13,6 +13,26 @@ from ptracker.config import ConfigManager
 
 console = Console()
 app = typer.Typer(help="Query holdings and portfolio information")
+
+# ID truncation limit (approximately 12 characters)
+ID_TRUNCATE_LENGTH = 12
+
+
+def format_id(id_value: Optional[str], full: bool = False) -> str:
+    """Format ID for display, optionally truncated.
+    
+    Args:
+        id_value: The ID to format
+        full: If True, show full ID; if False, truncate to ~12 chars
+        
+    Returns:
+        Formatted ID string
+    """
+    if not id_value:
+        return ""
+    if full:
+        return id_value
+    return id_value[:ID_TRUNCATE_LENGTH] + "..." if len(id_value) > ID_TRUNCATE_LENGTH else id_value
 
 
 def get_data_dir() -> Path:
@@ -28,6 +48,7 @@ def query_holdings(
     currency: Optional[str] = typer.Option(None, "--currency", "-c", help="Convert all values to currency"),
     detail_currency: Optional[str] = typer.Option(None, "--detail-currency", "-d", help="Currency for detail display (or 'mix' for original)"),
     total_currency: Optional[str] = typer.Option(None, "--total-currency", "-t", help="Currency for total calculation"),
+    fullid: bool = typer.Option(False, "--fullid", help="Show full ID instead of truncated"),
 ):
     """Query current holdings."""
     data_dir = get_data_dir()
@@ -92,6 +113,7 @@ def query_holdings(
     # Create table for active holdings
     if holdings:
         table = Table(title="Active Holdings", show_header=True, header_style="bold cyan")
+        table.add_column("ID", style="dim")
         table.add_column("Asset", style="bold")
         table.add_column("Account")
         table.add_column("Dir")
@@ -132,6 +154,7 @@ def query_holdings(
             total_invested += invested
             
             table.add_row(
+                format_id(holding.get('id'), fullid),
                 holding['asset'],
                 holding['account'],
                 holding['direction'][:1].upper(),
@@ -283,6 +306,7 @@ def query_realized(
     total_currency: Optional[str] = typer.Option(None, "--total-currency", "-t", help="Currency for total calculation"),
     sort_by: Optional[str] = typer.Option("date", "--sort", "-s", help="Sort by: date, pnl, return, days (default: date)"),
     limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Limit number of results"),
+    fullid: bool = typer.Option(False, "--fullid", help="Show full ID instead of truncated"),
 ):
     """Query realized (closed) positions."""
     data_dir = get_data_dir()
@@ -355,6 +379,7 @@ def query_realized(
 
     # Create table
     table = Table(title="Realized Positions", show_header=True, header_style="bold cyan")
+    table.add_column("ID", style="dim")
     table.add_column("Asset", style="bold")
     table.add_column("Account")
     table.add_column("Dir")
@@ -401,6 +426,7 @@ def query_realized(
         total_pnl += pnl
 
         table.add_row(
+            format_id(realized.get('id'), fullid),
             realized['asset'],
             realized['account'],
             realized['direction'][:1].upper(),
@@ -710,6 +736,115 @@ def query_pnl(
         console.print(f"\n[dim]Total Positions: {len(realized_positions)}[/dim]")
     else:
         console.print(f"\n[dim]Active Holdings: {len(holdings)} | Closed Positions: {len(realized_positions)}[/dim]")
+
+
+@app.command("trades")
+def query_trades(
+    account: Optional[str] = typer.Option(None, "--account", "-a", help="Filter by account"),
+    asset: Optional[str] = typer.Option(None, "--asset", "-t", help="Filter by asset"),
+    trade_type: Optional[str] = typer.Option(None, "--type", help="Filter by type: buy, sell, dividend"),
+    direction: Optional[str] = typer.Option(None, "--direction", help="Filter by direction: long, short"),
+    from_date: Optional[str] = typer.Option(None, "--from", help="Start date (YYYY-MM-DD)"),
+    to_date: Optional[str] = typer.Option(None, "--to", help="End date (YYYY-MM-DD)"),
+    sort_by: Optional[str] = typer.Option("date", "--sort", help="Sort by: date, asset (default: date)"),
+    limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Limit results"),
+    output: Optional[str] = typer.Option("table", "--output", "-o", help="Output format: table, json"),
+    fullid: bool = typer.Option(False, "--fullid", help="Show full ID instead of truncated"),
+):
+    """Query trade transactions."""
+    data_dir = get_data_dir()
+
+    if not data_dir.exists():
+        console.print("[red]Error: ptracker not initialized. Run 'ptracker init' first.[/red]")
+        raise typer.Exit(1)
+
+    # Get all transactions
+    transaction_repo = TransactionRepository(data_dir / "transactions.json")
+    transactions = transaction_repo.find_all()
+
+    if not transactions:
+        console.print("[yellow]No transactions found.[/yellow]")
+        return
+
+    # Apply filters
+    if account:
+        transactions = [t for t in transactions if t['account'] == account]
+
+    if asset:
+        transactions = [t for t in transactions if t['asset'].upper() == asset.upper()]
+
+    if trade_type:
+        transactions = [t for t in transactions if t['type'] == trade_type.lower()]
+
+    if direction:
+        transactions = [t for t in transactions if t['direction'] == direction.lower()]
+
+    if from_date:
+        transactions = [t for t in transactions if t['datetime'][:10] >= from_date]
+
+    if to_date:
+        transactions = [t for t in transactions if t['datetime'][:10] <= to_date]
+
+    if not transactions:
+        console.print("[yellow]No transactions match the filters.[/yellow]")
+        return
+
+    # Sort
+    if sort_by == "asset":
+        transactions.sort(key=lambda t: (t['asset'], t['datetime']), reverse=True)
+    else:  # date (default)
+        transactions.sort(key=lambda t: t['datetime'], reverse=True)
+
+    # Apply limit
+    if limit:
+        transactions = transactions[:limit]
+
+    # Output as JSON if requested
+    if output == "json":
+        import json
+        console.print(json.dumps(transactions, indent=2, default=str))
+        return
+
+    # Create table
+    table = Table(title="Transactions", show_header=True, header_style="bold cyan")
+    table.add_column("ID", style="dim")
+    table.add_column("Date", style="dim")
+    table.add_column("Type")
+    table.add_column("Action")
+    table.add_column("Direction")
+    table.add_column("Asset", style="bold")
+    table.add_column("Quantity", justify="right")
+    table.add_column("Price", justify="right")
+    table.add_column("Currency")
+    table.add_column("Fee", justify="right")
+    table.add_column("Account")
+    table.add_column("Note", style="dim")
+
+    for tx in transactions:
+        if tx['type'] == 'dividend':
+            type_color = "blue"
+            qty_display = "-"
+        else:
+            type_color = "green" if tx['type'] == 'buy' else "red"
+            qty_display = f"{abs(tx['quantity']):.2f}"
+
+        table.add_row(
+            format_id(tx.get('id'), fullid),
+            tx['datetime'][:10],
+            f"[{type_color}]{tx['type'].upper()}[/{type_color}]",
+            tx['action'],
+            tx['direction'][:1].upper(),
+            tx['asset'],
+            qty_display,
+            f"{tx['price']:.2f}",
+            tx['currency'],
+            f"{tx.get('fee', 0):.2f}",
+            tx['account'],
+            tx.get('note', '')
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Total: {len(transactions)} transaction(s)[/dim]")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 import typer
 from ptracker.cli.init import init_command
 from ptracker.cli import account, trade, query, config, snapshot
+from ptracker.cli.edit import edit_record
 from ptracker import __version__
 
 
@@ -25,6 +26,7 @@ app.add_typer(trade.app, name="trade")
 app.add_typer(query.app, name="query")
 app.add_typer(config.app, name="config")
 app.add_typer(snapshot.app, name="snapshot")
+app.command(name="edit")(edit_record)
 
 
 @app.callback()
