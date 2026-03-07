@@ -1,6 +1,6 @@
 ---
 name: ptracker
-description: 个人投资组合跟踪工具，用于管理多市场、多账户的投资组合，记录交易、查询持仓和盈亏。支持港股、美股、A股、加密货币等多种资产类型，支持做多做空。
+description: 个人投资组合跟踪工具，用于管理多市场、多账户的投资组合，记录交易、查询持仓和盈亏、编辑记录。支持港股、美股、A股、加密货币等多种资产类型，支持做多做空。
 ---
 
 # ptracker - 投资组合跟踪 CLI 工具
@@ -112,6 +112,25 @@ description: 个人投资组合跟踪工具，用于管理多市场、多账户�
 - 持仓计算和盈亏计算均考虑乘数
 - 显示时自动转换为每股价格
 
+### 9. 记录编辑
+- 支持编辑交易记录的价格、手续费、账户、备注
+- 支持编辑持仓记录的账户、备注、状态
+- 支持编辑已平仓记录的账户、备注
+- 通过 ID 或资产+账户组合定位记录
+- 字段值自动类型验证和转换
+- 编辑前后值对比显示
+
+### 10. 交易日期指定
+- 录入交易时可通过 `--date` 指定历史日期
+- 支持 `YYYY-MM-DD` 和 ISO 格式
+- 不指定则默认使用当前时间
+
+### 11. ID 管理
+- 所有记录自动生成唯一 ID（txn_xxx, hold_xxx, real_xxx）
+- 查询时默认截断显示 ID（约 12 字符）
+- 使用 `--fullid` 显示完整 ID
+- 支持通过 ID 定位和编辑记录
+
 ## 命令详解
 
 ### 初始化系统
@@ -195,6 +214,7 @@ ptracker trade add buy <资产代码> <数量> <价格> \
   --direction long \
   --account <账户名> \
   --fee <手续费> \
+  --date <日期> \
   --note "备注"
 
 # 示例：买入美股
@@ -205,6 +225,14 @@ ptracker trade add buy AAPL 100 150.0 \
   --account ibkr \
   --fee 1.0 \
   --note "建仓苹果"
+
+# 示例：指定日期买入
+ptracker trade add buy AAPL 100 150.0 \
+  --currency USD \
+  --action open \
+  --direction long \
+  --account ibkr \
+  --date 2026-01-15
 
 # 示例：买入港股
 ptracker trade add buy 0700.HK 500 320.5 \
@@ -289,6 +317,11 @@ ptracker trade add dividend AAPL 50.0 \
 - 不需要输入价格参数（分红金额会存储在价格字段）
 - 分红会自动降低持仓成本
 
+**通用参数说明**:
+- `--date`: 交易日期，格式 `YYYY-MM-DD` 或 ISO 格式（如 `2026-01-15T10:30:00`），不指定则使用当前时间
+- `--fee`: 手续费，默认为 0
+- `--note`: 交易备注
+
 #### 查看交易记录
 
 ```bash
@@ -316,6 +349,38 @@ ptracker trade list --action close
 # 按方向筛选
 ptracker trade list --direction long
 ptracker trade list --direction short
+
+# 限制显示数量（默认 50）
+ptracker trade list --limit 20
+
+# 显示完整 ID
+ptracker trade list --fullid
+```
+
+也可以通过 `query trades` 子命令查询交易记录（功能更丰富）：
+
+```bash
+# 查看所有交易
+ptracker query trades
+
+# 按资产/账户/类型/方向筛选
+ptracker query trades --asset AAPL --account ibkr
+
+# 按日期范围筛选
+ptracker query trades --from 2026-01-01 --to 2026-12-31
+
+# 按排序方式
+ptracker query trades --sort date    # 按日期排序（默认）
+ptracker query trades --sort asset   # 按资产排序
+
+# 限制显示数量
+ptracker query trades --limit 10
+
+# 输出为 JSON 格式
+ptracker query trades --output json
+
+# 显示完整 ID
+ptracker query trades --fullid
 ```
 
 ### 查询持仓
@@ -344,9 +409,13 @@ ptracker query holdings --detail-currency USD --total-currency CNY
 
 # 明细保持原始货币，汇总转换为 USD
 ptracker query holdings --detail-currency mix --total-currency USD
+
+# 显示完整 ID
+ptracker query holdings --fullid
 ```
 
 **输出字段说明**:
+- `ID`: 持仓记录 ID（默认截断显示，使用 `--fullid` 显示完整 ID）
 - `Asset`: 资产代码
 - `Account`: 账户名称
 - `Direction`: 方向（Long/Short）
@@ -355,6 +424,7 @@ ptracker query holdings --detail-currency mix --total-currency USD
 - `Total Invested`: 总投资金额
 - `Currency`: 货币
 - `First Open`: 首次开仓日期
+- `Last Updated`: 最后更新日期
 - `Status`: 状态（active/closed）
 
 ### 查询投资组合价值
@@ -405,9 +475,13 @@ ptracker query realized --limit 10
 # 货币转换（同 holdings 的三级货币控制）
 ptracker query realized --currency USD
 ptracker query realized --detail-currency mix --total-currency USD
+
+# 显示完整 ID
+ptracker query realized --fullid
 ```
 
 **输出字段说明**:
+- `ID`: 已平仓记录 ID（默认截断显示，使用 `--fullid` 显示完整 ID）
 - `Asset`: 资产代码
 - `Account`: 账户名称
 - `Direction`: 方向（Long/Short）
@@ -466,6 +540,40 @@ ptracker config set general.cost_basis_method fifo
 # 交互式修改颜色方案
 ptracker config color
 ```
+
+### 编辑记录
+
+```bash
+# 编辑交易记录（通过 ID）
+ptracker edit trans --id txn_xxx price=150.0
+ptracker edit trans --id txn_xxx fee=5.0 note="修正手续费"
+
+# 编辑持仓记录（通过 ID）
+ptracker edit holding --id hold_xxx note="Updated note"
+ptracker edit holding --id hold_xxx status=closed
+
+# 编辑持仓记录（通过资产+账户定位）
+ptracker edit holding --asset 0700.HK --account longbridge note="Updated note"
+ptracker edit holding --asset AAPL --account ibkr --direction long note="长期持有"
+
+# 编辑已平仓记录（通过 ID）
+ptracker edit realized --id real_xxx note="Updated note"
+ptracker edit realized --id real_xxx account=ibkr
+```
+
+**可编辑字段**:
+
+| 记录类型 | 可编辑字段 | 说明 |
+|---------|-----------|------|
+| `trans` | `price`, `fee`, `account`, `note` | 交易记录 |
+| `holding` | `account`, `note`, `status` | 持仓记录（status: active/closed） |
+| `realized` | `account`, `note` | 已平仓记录 |
+
+**定位方式**:
+- `trans` 和 `realized`: 必须使用 `--id` 定位
+- `holding`: 可以使用 `--id` 定位，也可以使用 `--asset` + `--account`（+ 可选 `--direction`）组合定位
+
+**字段格式**: `field=value`，多个字段用空格分隔
 
 ### 投资组合快照
 
@@ -599,7 +707,42 @@ ptracker query holdings --asset AAPL
 ptracker trade list --type dividend
 ```
 
-### 工作流 5: 多账户管理
+### 工作流 5: 修正错误记录
+
+```bash
+# 1. 查看交易记录，找到需要修改的记录 ID
+ptracker trade list --asset AAPL --fullid
+
+# 2. 修改交易价格
+ptracker edit trans --id txn_abc123 price=151.5
+
+# 3. 修改手续费和备注
+ptracker edit trans --id txn_abc123 fee=2.0 note="修正手续费"
+
+# 4. 修改持仓备注（通过资产+账户定位）
+ptracker edit holding --asset AAPL --account ibkr note="长期持有核心仓位"
+
+# 5. 查看已平仓记录，找到 ID
+ptracker query realized --asset AAPL --fullid
+
+# 6. 修改已平仓记录备注
+ptracker edit realized --id real_xyz789 note="止盈出场"
+```
+
+### 工作流 6: 补录历史交易
+
+```bash
+# 1. 补录一周前的买入交易
+ptracker trade add buy AAPL 100 148.0 \
+  --currency USD --action open --direction long \
+  --account ibkr --date 2026-02-28 --note "补录历史交易"
+
+# 2. 补录指定日期的分红
+ptracker trade add dividend AAPL 50.0 \
+  --currency USD --account ibkr --date 2026-03-01 --note "Q4 2025 dividend"
+```
+
+### 工作流 7: 多账户管理
 
 ```bash
 # 1. 查看所有账户
@@ -660,6 +803,7 @@ ptracker query pnl --detail
 ### Holding（持仓）
 ```python
 {
+    "id": "hold_xxx",
     "asset": "AAPL",
     "account": "ibkr",
     "direction": "long",
@@ -762,10 +906,19 @@ cp ~/.ptracker/transactions.json ~/backup/
 ptracker trade list --from 2026-01-01 --to 2026-03-31
 ```
 
-### Q4: 如何删除错误的交易记录？
-目前不支持删除交易记录（不可变日志设计）。如需修正，可以：
-1. 添加反向交易来抵消
-2. 或直接编辑 `~/.ptracker/transactions.json`（需谨慎）
+### Q4: 如何修改错误的交易记录？
+使用 `ptracker edit` 命令修改记录的可编辑字段：
+```bash
+# 修改交易的价格和手续费
+ptracker edit trans --id txn_xxx price=150.0 fee=5.0
+
+# 修改持仓的备注
+ptracker edit holding --id hold_xxx note="Updated note"
+
+# 修改已平仓记录的备注
+ptracker edit realized --id real_xxx note="Updated note"
+```
+如需完全删除，可以添加反向交易来抵消，或直接编辑 JSON 文件（需谨慎）。
 
 ### Q5: 价格查询失败怎么办？
 ```bash
@@ -795,19 +948,27 @@ ptracker/
 │   ├── main.py       # 主入口
 │   ├── account.py    # 账户管理
 │   ├── trade.py      # 交易记录
-│   ├── query.py      # 查询命令
+│   ├── query.py      # 查询命令（holdings, value, realized, pnl, trades）
+│   ├── edit.py       # 编辑记录（trans, holding, realized）
 │   ├── config.py     # 配置管理
+│   ├── snapshot.py   # 投资组合快照
 │   └── init.py       # 初始化
 ├── models/           # 数据模型
 │   ├── transaction.py
 │   ├── holding.py
 │   ├── realized_position.py
-│   └── account.py
+│   ├── account.py
+│   ├── cash_flow.py
+│   ├── snapshot.py
+│   └── price_quote.py
 ├── repositories/     # 数据访问层
 │   ├── base.py
 │   ├── transaction.py
 │   ├── holding.py
-│   └── realized.py
+│   ├── realized.py
+│   ├── account.py
+│   ├── cash_flow.py
+│   └── snapshot.py
 ├── services/         # 业务逻辑
 │   ├── position_calculator.py
 │   ├── pnl_calculator.py
@@ -843,7 +1004,7 @@ pip install -e .
 
 ## 版本信息
 
-- **当前版本**: 0.1.4
+- **当前版本**: 0.1.3
 - **Python 要求**: 3.10+
 - **许可证**: MIT
 
@@ -860,7 +1021,7 @@ pip install -e .
 
 ## 注意事项
 
-1. 交易记录是不可变日志，删除需谨慎
+1. 交易记录支持编辑部分字段（价格、手续费、账户、备注），但不可删除
 2. 价格查询需要网络连接
 3. 分红会自动降低持仓成本
 4. 做空交易的盈亏计算与做多相反
