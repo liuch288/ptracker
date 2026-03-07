@@ -19,13 +19,16 @@ app = typer.Typer(help="Manage trades and transactions")
 # ID truncation limit (approximately 12 characters)
 ID_TRUNCATE_LENGTH = 12
 
+# Note truncation limit
+NOTE_TRUNCATE_LENGTH = 20
+
 
 def format_id(id_value: Optional[str], full: bool = False) -> str:
     """Format ID for display, optionally truncated.
     
     Args:
         id_value: The ID to format
-        full: If True, show full ID; if False, truncate to ~12 chars
+        full: If True, show full ID; if False, return empty string (ID hidden by default)
         
     Returns:
         Formatted ID string
@@ -34,7 +37,25 @@ def format_id(id_value: Optional[str], full: bool = False) -> str:
         return ""
     if full:
         return id_value
-    return id_value[:ID_TRUNCATE_LENGTH] + "..." if len(id_value) > ID_TRUNCATE_LENGTH else id_value
+    # ID hidden by default, only show when full=True
+    return ""
+
+
+def format_note(note: Optional[str], full: bool = False) -> str:
+    """Format note for display, optionally truncated.
+    
+    Args:
+        note: The note to format
+        full: If True, show full note; if False, truncate to ~20 chars
+        
+    Returns:
+        Formatted note string
+    """
+    if not note:
+        return ""
+    if full:
+        return note
+    return note[:NOTE_TRUNCATE_LENGTH] + "..." if len(note) > NOTE_TRUNCATE_LENGTH else note
 
 # Yahoo Finance code format patterns
 ASSET_CODE_PATTERNS = {
@@ -388,7 +409,8 @@ def list_trades(
     action: Optional[str] = typer.Option(None, "--action", help="Filter by action (open/close/income)"),
     direction: Optional[str] = typer.Option(None, "--direction", "-d", help="Filter by direction (long/short)"),
     limit: int = typer.Option(50, "--limit", "-l", help="Maximum number of transactions to show"),
-    fullid: bool = typer.Option(False, "--fullid", help="Show full ID instead of truncated"),
+    fullid: bool = typer.Option(False, "--fullid", help="Show full ID"),
+    fullnote: bool = typer.Option(False, "--fullnote", help="Show full note instead of truncated"),
 ):
     """List transactions with optional filters."""
     data_dir = get_data_dir()
@@ -450,7 +472,9 @@ def list_trades(
     table.add_column("Action")
     table.add_column("Dir")
     table.add_column("Account")
-    table.add_column("ID", style="dim")
+    if fullid:
+        table.add_column("ID", style="dim")
+    table.add_column("Note", style="dim")
 
     for tx in transactions:
         if tx['type'] == 'dividend':
@@ -460,7 +484,7 @@ def list_trades(
             type_color = "green" if tx['type'] == 'buy' else "red"
             qty_display = f"{abs(tx['quantity']):.2f}"
 
-        table.add_row(
+        row = [
             tx['datetime'][:10],
             f"[{type_color}]{tx['type'].upper()}[/{type_color}]",
             tx['asset'],
@@ -470,8 +494,12 @@ def list_trades(
             tx['action'],
             tx['direction'][:1].upper(),
             tx['account'],
-            format_id(tx.get('id'), fullid)
-        )
+        ]
+        if fullid:
+            row.append(format_id(tx.get('id'), fullid))
+        row.append(format_note(tx.get('note'), fullnote))
+        
+        table.add_row(*row)
 
     console.print(table)
     console.print(f"\n[dim]Total: {len(transactions)} transaction(s)[/dim]")
