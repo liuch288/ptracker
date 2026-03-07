@@ -127,8 +127,8 @@ description: 个人投资组合跟踪工具，用于管理多市场、多账户�
 
 ### 11. ID 管理
 - 所有记录自动生成唯一 ID（txn_xxx, hold_xxx, real_xxx）
-- 查询时默认截断显示 ID（约 12 字符）
-- 使用 `--fullid` 显示完整 ID
+- **ID 列**：默认隐藏；使用 `--fullid` 参数显示完整 ID
+- **Note 列**：默认显示，截断显示（约20字符）；使用 `--fullnote` 参数显示完整 note
 - 支持通过 ID 定位和编辑记录
 
 ## 命令详解
@@ -355,6 +355,9 @@ ptracker trade list --limit 20
 
 # 显示完整 ID
 ptracker trade list --fullid
+
+# 显示完整 Note
+ptracker trade list --fullnote
 ```
 
 也可以通过 `query trades` 子命令查询交易记录（功能更丰富）：
@@ -381,6 +384,9 @@ ptracker query trades --output json
 
 # 显示完整 ID
 ptracker query trades --fullid
+
+# 显示完整 Note
+ptracker query trades --fullnote
 ```
 
 ### 查询持仓
@@ -412,10 +418,13 @@ ptracker query holdings --detail-currency mix --total-currency USD
 
 # 显示完整 ID
 ptracker query holdings --fullid
+
+# 显示完整 Note
+ptracker query holdings --fullnote
 ```
 
 **输出字段说明**:
-- `ID`: 持仓记录 ID（默认截断显示，使用 `--fullid` 显示完整 ID）
+- `ID`: 持仓记录 ID（默认隐藏，使用 `--fullid` 显示完整 ID）
 - `Asset`: 资产代码
 - `Account`: 账户名称
 - `Direction`: 方向（Long/Short）
@@ -423,6 +432,7 @@ ptracker query holdings --fullid
 - `Avg Cost`: 平均成本
 - `Total Invested`: 总投资金额
 - `Currency`: 货币
+- `Note`: 备注（默认截断显示，使用 `--fullnote` 显示完整 Note）
 - `First Open`: 首次开仓日期
 - `Last Updated`: 最后更新日期
 - `Status`: 状态（active/closed）
@@ -478,10 +488,13 @@ ptracker query realized --detail-currency mix --total-currency USD
 
 # 显示完整 ID
 ptracker query realized --fullid
+
+# 显示完整 Note
+ptracker query realized --fullnote
 ```
 
 **输出字段说明**:
-- `ID`: 已平仓记录 ID（默认截断显示，使用 `--fullid` 显示完整 ID）
+- `ID`: 已平仓记录 ID（默认隐藏，使用 `--fullid` 显示完整 ID）
 - `Asset`: 资产代码
 - `Account`: 账户名称
 - `Direction`: 方向（Long/Short）
@@ -491,6 +504,7 @@ ptracker query realized --fullid
 - `Realized P&L`: 已实现盈亏
 - `Return %`: 回报率
 - `Holding Days`: 持仓天数
+- `Note`: 备注（默认截断显示，使用 `--fullnote` 显示完整 Note）
 - `First Open`: 首次开仓日期
 - `Last Close`: 最后平仓日期
 
