@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class Holding(BaseModel):
     """Current active position with non-zero quantity."""
     
+    id: str
     asset: str
     account: str
     direction: Literal["long", "short"]

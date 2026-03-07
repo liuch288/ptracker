@@ -88,7 +88,29 @@ description: 个人投资组合跟踪工具，用于管理多市场、多账户�
 - 当前持仓快照（holdings.json）
 - 已平仓记录（realized.json）
 - 账户信息（accounts.json）
+- 资金流水记录（cash_flows.json）
+- 投资组合快照（snapshots.json）
 - 配置文件（config.toml）
+
+### 6. 投资组合快照
+- 捕获当前投资组合完整状态
+- 包含实时市场价格、未实现盈亏、回报率
+- 按账户和持仓分层记录
+- 支持历史快照查询和对比
+- 自动记录汇率和价格来源
+- 支持快照清理（保留最近 N 条）
+
+### 7. 资金流水管理
+- 记录账户入金（deposit）和出金（withdrawal）
+- 每笔流水独立记录，含时间、金额、货币、备注
+- 自动更新账户累计入金/出金总额
+- 支持按账户查询流水历史
+
+### 8. 美股期权支持
+- 自动识别美股期权代码格式（如 AAPL250117C00150000）
+- 期权合约自动应用 100 倍乘数
+- 持仓计算和盈亏计算均考虑乘数
+- 显示时自动转换为每股价格
 
 ## 命令详解
 
@@ -146,6 +168,12 @@ ptracker account deposit <账户名> <金额> --currency <货币>
 
 # 出金（记录取款）
 ptracker account withdraw <账户名> <金额> --currency <货币>
+
+# 入金带备注
+ptracker account deposit ibkr 10000 --currency USD --note "从银行转账"
+
+# 出金带备注
+ptracker account withdraw ibkr 5000 --currency USD --note "转出到银行"
 
 
 **参数说明**:
@@ -308,8 +336,14 @@ ptracker query holdings --sort total_invested
 # 按数量排序
 ptracker query holdings --sort quantity
 
-# 转换为特定货币显示
+# 转换为特定货币显示（明细和汇总都转换）
 ptracker query holdings --currency USD
+
+# 分别控制明细和汇总的货币
+ptracker query holdings --detail-currency USD --total-currency CNY
+
+# 明细保持原始货币，汇总转换为 USD
+ptracker query holdings --detail-currency mix --total-currency USD
 ```
 
 **输出字段说明**:
@@ -363,9 +397,14 @@ ptracker query realized --asset AAPL
 ptracker query realized --sort pnl      # 按盈亏排序
 ptracker query realized --sort return   # 按回报率排序
 ptracker query realized --sort days     # 按持仓天数排序
+ptracker query realized --sort date     # 按日期排序（默认）
 
 # 限制显示数量
 ptracker query realized --limit 10
+
+# 货币转换（同 holdings 的三级货币控制）
+ptracker query realized --currency USD
+ptracker query realized --detail-currency mix --total-currency USD
 ```
 
 **输出字段说明**:
@@ -396,8 +435,14 @@ ptracker query pnl --realized-only
 # 只看未实现盈亏
 ptracker query pnl --unrealized-only
 
+# 按账户筛选
+ptracker query pnl --account ibkr
+
 # 转换为特定货币
 ptracker query pnl --currency USD
+
+# 分别控制明细和汇总货币
+ptracker query pnl --detail-currency mix --total-currency USD
 ```
 
 ### 配置管理
@@ -421,6 +466,42 @@ ptracker config set general.cost_basis_method fifo
 # 交互式修改颜色方案
 ptracker config color
 ```
+
+### 投资组合快照
+
+```bash
+# 捕获当前投资组合快照（自动保存并显示）
+ptracker snapshot take
+
+# 捕获但不保存（仅显示）
+ptracker snapshot take --no-save
+
+# 捕获但不显示
+ptracker snapshot take --no-show
+
+# 查看最近的快照列表
+ptracker snapshot list
+ptracker snapshot list --limit 20
+
+# 查看最新快照详情
+ptracker snapshot show
+
+# 查看指定日期的快照
+ptracker snapshot show --date 2026-03-01
+
+# 清理旧快照（保留最近 30 条）
+ptracker snapshot prune
+ptracker snapshot prune --keep 50
+```
+
+**快照包含的信息**:
+- 投资组合总市值、总成本、未实现/已实现盈亏
+- 总回报率
+- 各账户详情（入金、出金、净入金、市值、盈亏）
+- 各持仓详情（当前价格、市值、未实现盈亏、回报率）
+- 货币分布
+- 汇率快照
+- 价格来源和时间戳
 
 **配置文件结构** (`~/.ptracker/config.toml`):
 ```toml

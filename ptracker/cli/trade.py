@@ -16,6 +16,26 @@ from ptracker.utils.color_helper import get_pnl_color
 console = Console()
 app = typer.Typer(help="Manage trades and transactions")
 
+# ID truncation limit (approximately 12 characters)
+ID_TRUNCATE_LENGTH = 12
+
+
+def format_id(id_value: Optional[str], full: bool = False) -> str:
+    """Format ID for display, optionally truncated.
+    
+    Args:
+        id_value: The ID to format
+        full: If True, show full ID; if False, truncate to ~12 chars
+        
+    Returns:
+        Formatted ID string
+    """
+    if not id_value:
+        return ""
+    if full:
+        return id_value
+    return id_value[:ID_TRUNCATE_LENGTH] + "..." if len(id_value) > ID_TRUNCATE_LENGTH else id_value
+
 # Yahoo Finance code format patterns
 ASSET_CODE_PATTERNS = {
     'US': (r'^[A-Z]{1,5}$', 'AAPL, MSFT, TSLA (no suffix)'),
@@ -368,6 +388,7 @@ def list_trades(
     action: Optional[str] = typer.Option(None, "--action", help="Filter by action (open/close/income)"),
     direction: Optional[str] = typer.Option(None, "--direction", "-d", help="Filter by direction (long/short)"),
     limit: int = typer.Option(50, "--limit", "-l", help="Maximum number of transactions to show"),
+    fullid: bool = typer.Option(False, "--fullid", help="Show full ID instead of truncated"),
 ):
     """List transactions with optional filters."""
     data_dir = get_data_dir()
@@ -449,7 +470,7 @@ def list_trades(
             tx['action'],
             tx['direction'][:1].upper(),
             tx['account'],
-            tx['id'][:12] + "..."
+            format_id(tx.get('id'), fullid)
         )
 
     console.print(table)
